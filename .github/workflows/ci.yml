@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install deps
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+
+  gcp-compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_SA_KEY_JSON }}
+          export_default_credentials: true
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Vertex AI healthcheck
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_LOCATION: ${{ vars.GCP_LOCATION || 'us-central1' }}
+        run: bash scripts/ci/vertex_ai_healthcheck.sh
+      - name: Cloud Run target validation
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_RUN_REGION: ${{ vars.GCP_RUN_REGION || 'us-central1' }}
+          CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE || 'what-if-agent' }}
+        run: bash scripts/ci/cloud_run_target_check.sh
+

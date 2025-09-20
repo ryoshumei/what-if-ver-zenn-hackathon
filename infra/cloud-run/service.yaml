@@ -1,0 +1,29 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: what-if-agent
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "3"
+        run.googleapis.com/cpu-throttling: "true"
+    spec:
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT/REPO/what-if-agent:TAG
+          ports:
+            - name: http1
+              containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: production
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      containerConcurrency: 80
+
