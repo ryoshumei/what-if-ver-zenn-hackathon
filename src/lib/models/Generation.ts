@@ -16,6 +16,9 @@ export const GenerationSchema = z.object({
   createdAt: z.date(),
   updatedAt: z.date(),
   error: z.string().nullable(),
+  // Optional fields to persist generation outputs and metadata
+  assetUrls: z.array(z.string()).nullable().optional(),
+  metadata: z.record(z.unknown()).nullable().optional(),
 });
 
 export type Generation = z.infer<typeof GenerationSchema>;
