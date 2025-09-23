@@ -5,6 +5,8 @@ import { parseJsonBody } from "../../../lib/http/security";
 import { createRequestLogger } from "../../../lib/logging/logger";
 import { serverFirestore } from "../../../lib/repositories/firestore";
 import { policyEnforcer } from "../../../lib/safety/policy";
+// Import job runner to ensure it auto-starts (with singleton protection)
+import "../../../lib/jobs/runner";
 
 // Request validation schema based on OpenAPI spec
 const CreateGenerationRequestSchema = z.object({
@@ -87,9 +89,7 @@ async function POST(request: NextRequest): Promise<NextResponse> {
       promptId: ideaPrompt.id,
       type,
       model:
-        type === "image"
-          ? "gemini-2.5-flash-image-preview"
-          : "veo-3.0-fast-generate-001",
+        type === "image" ? "imagegeneration@006" : "veo-3.0-fast-generate-001",
       refinementOf: refinementOf || null,
       alignmentFeedback: null,
     });

@@ -1,7 +1,10 @@
 import {
   addDoc,
+  type CollectionReference as ClientCollectionReference,
+  type DocumentReference as ClientDocumentReference,
+  type DocumentSnapshot as ClientDocumentSnapshot,
+  type Query as ClientQuery,
   collection,
-  type DocumentSnapshot,
   doc,
   getDoc,
   getDocs,
@@ -13,6 +16,13 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import type {
+  CollectionReference as AdminCollectionReference,
+  DocumentReference as AdminDocumentReference,
+  DocumentSnapshot as AdminDocumentSnapshot,
+  Firestore as AdminFirestore,
+  Query as AdminQuery,
+} from "firebase-admin/firestore";
 import { db } from "../firebase/client";
 import { getAdminFirestore } from "../firebase/server";
 import type {
@@ -31,9 +41,17 @@ import type { CreateIdeaPrompt, IdeaPrompt } from "../models/IdeaPrompt";
 import type { CreatePolicyFlag, PolicyFlag } from "../models/PolicyFlag";
 import type { CreateUser, UpdateUser, User } from "../models/User";
 
+// Union types for dual-mode Firebase compatibility
+type DualDocumentSnapshot = ClientDocumentSnapshot | AdminDocumentSnapshot;
+type DualDocumentReference = ClientDocumentReference | AdminDocumentReference;
+type DualCollectionReference =
+  | ClientCollectionReference
+  | AdminCollectionReference;
+type DualQuery = ClientQuery | AdminQuery;
+
 export interface PaginationOptions {
   pageSize?: number;
-  startAfter?: DocumentSnapshot;
+  startAfter?: DualDocumentSnapshot;
 }
 
 export class FirestoreRepository {
@@ -45,6 +63,27 @@ export class FirestoreRepository {
 
   private get firestore() {
     return this.isServer ? getAdminFirestore() : db;
+  }
+
+  private getCollection(collectionName: string): DualCollectionReference {
+    if (this.isServer) {
+      return (this.firestore as AdminFirestore).collection(collectionName);
+    } else {
+      return collection(this.firestore as never, collectionName);
+    }
+  }
+
+  private getDocRef(
+    collectionName: string,
+    docId: string,
+  ): DualDocumentReference {
+    if (this.isServer) {
+      return (this.firestore as AdminFirestore)
+        .collection(collectionName)
+        .doc(docId);
+    } else {
+      return doc(this.firestore as never, collectionName, docId);
+    }
   }
 
   // Helper to convert Firestore timestamp to Date
@@ -63,10 +102,17 @@ export class FirestoreRepository {
   // User operations
   async getUser(id: string): Promise<User | null> {
     try {
-      const userDoc = await getDoc(doc(this.firestore as never, "users", id));
-      if (!userDoc.exists()) return null;
+      let userDoc: DualDocumentSnapshot;
 
-      return this.convertTimestamps({ id: userDoc.id, ...userDoc.data() });
+      if (this.isServer) {
+        userDoc = await this.getDocRef("users", id).get();
+        if (!userDoc.exists) return null;
+        return this.convertTimestamps({ id: userDoc.id, ...userDoc.data() });
+      } else {
+        userDoc = await getDoc(this.getDocRef("users", id));
+        if (!userDoc.exists()) return null;
+        return this.convertTimestamps({ id: userDoc.id, ...userDoc.data() });
+      }
     } catch (error) {
       console.error("Error getting user:", error);
       throw error;
@@ -76,13 +122,17 @@ export class FirestoreRepository {
   async createUser(userData: CreateUser): Promise<User> {
     try {
       const now = new Date();
-      const docRef = await addDoc(
-        collection(this.firestore as never, "users"),
-        {
-          ...userData,
-          createdAt: now,
-        },
-      );
+      let docRef: DualDocumentReference;
+      const data = {
+        ...userData,
+        createdAt: now,
+      };
+
+      if (this.isServer) {
+        docRef = await this.getCollection("users").add(data);
+      } else {
+        docRef = await addDoc(this.getCollection("users"), data);
+      }
 
       return {
         id: docRef.id,
@@ -97,7 +147,11 @@ export class FirestoreRepository {
 
   async updateUser(id: string, updates: UpdateUser): Promise<void> {
     try {
-      await updateDoc(doc(this.firestore as never, "users", id), updates);
+      if (this.isServer) {
+        await this.getDocRef("users", id).update(updates);
+      } else {
+        await updateDoc(this.getDocRef("users", id), updates);
+      }
     } catch (error) {
       console.error("Error updating user:", error);
       throw error;
@@ -107,12 +161,23 @@ export class FirestoreRepository {
   // IdeaPrompt operations
   async getIdeaPrompt(id: string): Promise<IdeaPrompt | null> {
     try {
-      const promptDoc = await getDoc(
-        doc(this.firestore as never, "ideaPrompts", id),
-      );
-      if (!promptDoc.exists()) return null;
+      let promptDoc: DualDocumentSnapshot;
 
-      return this.convertTimestamps({ id: promptDoc.id, ...promptDoc.data() });
+      if (this.isServer) {
+        promptDoc = await this.getDocRef("ideaPrompts", id).get();
+        if (!promptDoc.exists) return null;
+        return this.convertTimestamps({
+          id: promptDoc.id,
+          ...promptDoc.data(),
+        });
+      } else {
+        promptDoc = await getDoc(this.getDocRef("ideaPrompts", id));
+        if (!promptDoc.exists()) return null;
+        return this.convertTimestamps({
+          id: promptDoc.id,
+          ...promptDoc.data(),
+        });
+      }
     } catch (error) {
       console.error("Error getting idea prompt:", error);
       throw error;
@@ -122,14 +187,18 @@ export class FirestoreRepository {
   async createIdeaPrompt(promptData: CreateIdeaPrompt): Promise<IdeaPrompt> {
     try {
       const now = new Date();
-      const docRef = await addDoc(
-        collection(this.firestore as never, "ideaPrompts"),
-        {
-          ...promptData,
-          createdAt: now,
-          updatedAt: now,
-        },
-      );
+      const data = {
+        ...promptData,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      let docRef: DualDocumentReference;
+      if (this.isServer) {
+        docRef = await this.getCollection("ideaPrompts").add(data);
+      } else {
+        docRef = await addDoc(this.getCollection("ideaPrompts"), data);
+      }
 
       return {
         id: docRef.id,
@@ -150,18 +219,31 @@ export class FirestoreRepository {
     try {
       const pageSize = options.pageSize || 20;
 
-      let q = query(
-        collection(this.firestore as never, "ideaPrompts"),
-        where("authorId", "==", authorId),
-        orderBy("createdAt", "desc"),
-        limit(pageSize),
-      );
+      let q: DualQuery;
 
-      if (options.startAfter) {
-        q = query(q, startAfter(options.startAfter));
+      if (this.isServer) {
+        q = this.getCollection("ideaPrompts")
+          .where("authorId", "==", authorId)
+          .orderBy("createdAt", "desc")
+          .limit(pageSize);
+      } else {
+        q = query(
+          this.getCollection("ideaPrompts"),
+          where("authorId", "==", authorId),
+          orderBy("createdAt", "desc"),
+          limit(pageSize),
+        );
       }
 
-      const snapshot = await getDocs(q);
+      if (options.startAfter) {
+        if (this.isServer) {
+          q = q.startAfter(options.startAfter);
+        } else {
+          q = query(q, startAfter(options.startAfter));
+        }
+      }
+
+      const snapshot = this.isServer ? await q.get() : await getDocs(q);
       return snapshot.docs.map((doc) =>
         this.convertTimestamps({ id: doc.id, ...doc.data() }),
       );
@@ -174,12 +256,17 @@ export class FirestoreRepository {
   // Generation operations
   async getGeneration(id: string): Promise<Generation | null> {
     try {
-      const genDoc = await getDoc(
-        doc(this.firestore as never, "generations", id),
-      );
-      if (!genDoc.exists()) return null;
+      let genDoc: DualDocumentSnapshot;
 
-      return this.convertTimestamps({ id: genDoc.id, ...genDoc.data() });
+      if (this.isServer) {
+        genDoc = await this.getDocRef("generations", id).get();
+        if (!genDoc.exists) return null;
+        return this.convertTimestamps({ id: genDoc.id, ...genDoc.data() });
+      } else {
+        genDoc = await getDoc(this.getDocRef("generations", id));
+        if (!genDoc.exists()) return null;
+        return this.convertTimestamps({ id: genDoc.id, ...genDoc.data() });
+      }
     } catch (error) {
       console.error("Error getting generation:", error);
       throw error;
@@ -191,15 +278,19 @@ export class FirestoreRepository {
   ): Promise<Generation> {
     try {
       const now = new Date();
-      const docRef = await addDoc(
-        collection(this.firestore as never, "generations"),
-        {
-          ...generationData,
-          createdAt: now,
-          updatedAt: now,
-          error: null,
-        },
-      );
+      const data = {
+        ...generationData,
+        createdAt: now,
+        updatedAt: now,
+        error: null,
+      };
+
+      let docRef: DualDocumentReference;
+      if (this.isServer) {
+        docRef = await this.getCollection("generations").add(data);
+      } else {
+        docRef = await addDoc(this.getCollection("generations"), data);
+      }
 
       return {
         id: docRef.id,
@@ -216,10 +307,16 @@ export class FirestoreRepository {
 
   async updateGeneration(id: string, updates: UpdateGeneration): Promise<void> {
     try {
-      await updateDoc(doc(this.firestore as never, "generations", id), {
+      const updateData = {
         ...updates,
         updatedAt: new Date(),
-      });
+      };
+
+      if (this.isServer) {
+        await this.getDocRef("generations", id).update(updateData);
+      } else {
+        await updateDoc(this.getDocRef("generations", id), updateData);
+      }
     } catch (error) {
       console.error("Error updating generation:", error);
       throw error;
@@ -228,16 +325,27 @@ export class FirestoreRepository {
 
   async getGenerationsByPrompt(promptId: string): Promise<Generation[]> {
     try {
-      const q = query(
-        collection(this.firestore as never, "generations"),
-        where("promptId", "==", promptId),
-        orderBy("createdAt", "desc"),
-      );
+      let q: DualQuery;
 
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) =>
-        this.convertTimestamps({ id: doc.id, ...doc.data() }),
-      );
+      if (this.isServer) {
+        q = this.getCollection("generations")
+          .where("promptId", "==", promptId)
+          .orderBy("createdAt", "desc");
+        const snapshot = await q.get();
+        return snapshot.docs.map((doc: DualDocumentSnapshot) =>
+          this.convertTimestamps({ id: doc.id, ...doc.data() }),
+        );
+      } else {
+        q = query(
+          this.getCollection("generations"),
+          where("promptId", "==", promptId),
+          orderBy("createdAt", "desc"),
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map((doc: DualDocumentSnapshot) =>
+          this.convertTimestamps({ id: doc.id, ...doc.data() }),
+        );
+      }
     } catch (error) {
       console.error("Error getting generations by prompt:", error);
       throw error;
@@ -248,16 +356,27 @@ export class FirestoreRepository {
     status: Generation["status"],
   ): Promise<Generation[]> {
     try {
-      const q = query(
-        collection(this.firestore as never, "generations"),
-        where("status", "==", status),
-        orderBy("createdAt", "desc"),
-      );
+      let q: DualQuery;
 
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) =>
-        this.convertTimestamps({ id: doc.id, ...doc.data() }),
-      );
+      if (this.isServer) {
+        q = this.getCollection("generations")
+          .where("status", "==", status)
+          .orderBy("createdAt", "desc");
+        const snapshot = await q.get();
+        return snapshot.docs.map((doc: DualDocumentSnapshot) =>
+          this.convertTimestamps({ id: doc.id, ...doc.data() }),
+        );
+      } else {
+        q = query(
+          this.getCollection("generations"),
+          where("status", "==", status),
+          orderBy("createdAt", "desc"),
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map((doc: DualDocumentSnapshot) =>
+          this.convertTimestamps({ id: doc.id, ...doc.data() }),
+        );
+      }
     } catch (error) {
       console.error("Error getting generations by status:", error);
       throw error;
@@ -267,12 +386,17 @@ export class FirestoreRepository {
   // Community Post operations
   async getCommunityPost(id: string): Promise<CommunityPost | null> {
     try {
-      const postDoc = await getDoc(
-        doc(this.firestore as never, "communityPosts", id),
-      );
-      if (!postDoc.exists()) return null;
+      let postDoc: DualDocumentSnapshot;
 
-      return this.convertTimestamps({ id: postDoc.id, ...postDoc.data() });
+      if (this.isServer) {
+        postDoc = await this.getDocRef("communityPosts", id).get();
+        if (!postDoc.exists) return null;
+        return this.convertTimestamps({ id: postDoc.id, ...postDoc.data() });
+      } else {
+        postDoc = await getDoc(this.getDocRef("communityPosts", id));
+        if (!postDoc.exists()) return null;
+        return this.convertTimestamps({ id: postDoc.id, ...postDoc.data() });
+      }
     } catch (error) {
       console.error("Error getting community post:", error);
       throw error;
@@ -284,13 +408,17 @@ export class FirestoreRepository {
   ): Promise<CommunityPost> {
     try {
       const now = new Date();
-      const docRef = await addDoc(
-        collection(this.firestore as never, "communityPosts"),
-        {
-          ...postData,
-          publishedAt: now,
-        },
-      );
+      const data = {
+        ...postData,
+        publishedAt: now,
+      };
+
+      let docRef: DualDocumentReference;
+      if (this.isServer) {
+        docRef = await this.getCollection("communityPosts").add(data);
+      } else {
+        docRef = await addDoc(this.getCollection("communityPosts"), data);
+      }
 
       return {
         id: docRef.id,
@@ -307,42 +435,80 @@ export class FirestoreRepository {
     try {
       const pageSize = feedQuery.pageSize || 12;
 
-      let q = query(
-        collection(this.firestore as never, "communityPosts"),
-        where("visibility", "==", "public"),
-        orderBy("publishedAt", "desc"),
-        limit(pageSize + 1), // Get one extra to check if there's a next page
-      );
+      let q: DualQuery;
 
-      // Add search filter if provided
-      if (feedQuery.q) {
-        // Simple text search - in production, you'd want full-text search
-        q = query(q, where("promptSummary", ">=", feedQuery.q));
-        q = query(q, where("promptSummary", "<=", `${feedQuery.q}\uf8ff`));
+      if (this.isServer) {
+        q = this.getCollection("communityPosts")
+          .where("visibility", "==", "public")
+          .orderBy("publishedAt", "desc")
+          .limit(pageSize + 1);
+
+        // Add search filter if provided
+        if (feedQuery.q) {
+          q = q
+            .where("promptSummary", ">=", feedQuery.q)
+            .where("promptSummary", "<=", `${feedQuery.q}\uf8ff`);
+        }
+
+        // Add author filter if provided
+        if (feedQuery.authorId) {
+          q = q.where("authorId", "==", feedQuery.authorId);
+        }
+
+        const snapshot = await q.get();
+        const allPosts = snapshot.docs.map((doc: DualDocumentSnapshot) =>
+          this.convertTimestamps<CommunityPostWithDetails>({
+            id: doc.id,
+            ...doc.data(),
+          }),
+        );
+
+        // Check if there's a next page
+        const hasNextPage = allPosts.length > pageSize;
+        const items = hasNextPage ? allPosts.slice(0, pageSize) : allPosts;
+        const nextPage = hasNextPage ? (feedQuery.page || 1) + 1 : null;
+
+        return {
+          items,
+          nextPage,
+        };
+      } else {
+        q = query(
+          this.getCollection("communityPosts"),
+          where("visibility", "==", "public"),
+          orderBy("publishedAt", "desc"),
+          limit(pageSize + 1),
+        );
+
+        // Add search filter if provided
+        if (feedQuery.q) {
+          q = query(q, where("promptSummary", ">=", feedQuery.q));
+          q = query(q, where("promptSummary", "<=", `${feedQuery.q}\uf8ff`));
+        }
+
+        // Add author filter if provided
+        if (feedQuery.authorId) {
+          q = query(q, where("authorId", "==", feedQuery.authorId));
+        }
+
+        const snapshot = await getDocs(q);
+        const allPosts = snapshot.docs.map((doc: DualDocumentSnapshot) =>
+          this.convertTimestamps<CommunityPostWithDetails>({
+            id: doc.id,
+            ...doc.data(),
+          }),
+        );
+
+        // Check if there's a next page
+        const hasNextPage = allPosts.length > pageSize;
+        const items = hasNextPage ? allPosts.slice(0, pageSize) : allPosts;
+        const nextPage = hasNextPage ? (feedQuery.page || 1) + 1 : null;
+
+        return {
+          items,
+          nextPage,
+        };
       }
-
-      // Add author filter if provided
-      if (feedQuery.authorId) {
-        q = query(q, where("authorId", "==", feedQuery.authorId));
-      }
-
-      const snapshot = await getDocs(q);
-      const allPosts = snapshot.docs.map((doc) =>
-        this.convertTimestamps<CommunityPostWithDetails>({
-          id: doc.id,
-          ...doc.data(),
-        }),
-      );
-
-      // Check if there's a next page
-      const hasNextPage = allPosts.length > pageSize;
-      const items = hasNextPage ? allPosts.slice(0, pageSize) : allPosts;
-      const nextPage = hasNextPage ? (feedQuery.page || 1) + 1 : null;
-
-      return {
-        items,
-        nextPage,
-      };
     } catch (error) {
       console.error("Error getting feed:", error);
       throw error;
@@ -353,13 +519,17 @@ export class FirestoreRepository {
   async createPolicyFlag(flagData: CreatePolicyFlag): Promise<PolicyFlag> {
     try {
       const now = new Date();
-      const docRef = await addDoc(
-        collection(this.firestore as never, "policyFlags"),
-        {
-          ...flagData,
-          createdAt: now,
-        },
-      );
+      const data = {
+        ...flagData,
+        createdAt: now,
+      };
+
+      let docRef: DualDocumentReference;
+      if (this.isServer) {
+        docRef = await this.getCollection("policyFlags").add(data);
+      } else {
+        docRef = await addDoc(this.getCollection("policyFlags"), data);
+      }
 
       return {
         id: docRef.id,
@@ -377,17 +547,29 @@ export class FirestoreRepository {
     targetId: string,
   ): Promise<PolicyFlag[]> {
     try {
-      const q = query(
-        collection(this.firestore as never, "policyFlags"),
-        where("targetType", "==", targetType),
-        where("targetId", "==", targetId),
-        orderBy("createdAt", "desc"),
-      );
+      let q: DualQuery;
 
-      const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) =>
-        this.convertTimestamps({ id: doc.id, ...doc.data() }),
-      );
+      if (this.isServer) {
+        q = this.getCollection("policyFlags")
+          .where("targetType", "==", targetType)
+          .where("targetId", "==", targetId)
+          .orderBy("createdAt", "desc");
+        const snapshot = await q.get();
+        return snapshot.docs.map((doc: DualDocumentSnapshot) =>
+          this.convertTimestamps({ id: doc.id, ...doc.data() }),
+        );
+      } else {
+        q = query(
+          this.getCollection("policyFlags"),
+          where("targetType", "==", targetType),
+          where("targetId", "==", targetId),
+          orderBy("createdAt", "desc"),
+        );
+        const snapshot = await getDocs(q);
+        return snapshot.docs.map((doc: DualDocumentSnapshot) =>
+          this.convertTimestamps({ id: doc.id, ...doc.data() }),
+        );
+      }
     } catch (error) {
       console.error("Error getting policy flags:", error);
       throw error;
@@ -401,16 +583,22 @@ export class FirestoreRepository {
     note?: string,
   ): Promise<void> {
     try {
-      await updateDoc(
-        doc(this.firestore as never, "generations", generationId),
-        {
-          alignmentFeedback: {
-            matchesIntent,
-            note: note || null,
-          },
-          updatedAt: new Date(),
+      const updateData = {
+        alignmentFeedback: {
+          matchesIntent,
+          note: note || null,
         },
-      );
+        updatedAt: new Date(),
+      };
+
+      if (this.isServer) {
+        await this.getDocRef("generations", generationId).update(updateData);
+      } else {
+        await updateDoc(
+          this.getDocRef("generations", generationId),
+          updateData,
+        );
+      }
     } catch (error) {
       console.error("Error recording alignment feedback:", error);
       throw error;

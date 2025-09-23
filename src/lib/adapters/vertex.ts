@@ -1,4 +1,8 @@
 import { VertexAI } from "@google-cloud/vertexai";
+import { v1 } from "@google-cloud/aiplatform";
+import { helpers } from "@google-cloud/aiplatform";
+const { PredictionServiceClient } = v1;
+import { GoogleAuth } from "google-auth-library";
 import { getEnv } from "../config/env";
 
 export interface ChatRequest {
@@ -123,45 +127,71 @@ Return only the improved prompt, nothing else.
   async generateImage(request: GenerationRequest): Promise<GenerationResponse> {
     try {
       const model = request.model || this.env.VERTEX_IMAGE_MODEL;
-      const generativeModel = this.vertexAI.getGenerativeModel({
-        model: model,
-      });
 
-      const imageRequest = {
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: request.prompt }],
-          },
-        ],
-        generationConfig: {
-          maxOutputTokens: 1,
-          ...request.parameters,
-        },
+      // Use the correct Prediction Service Client for Imagen models
+      const clientOptions = {
+        apiEndpoint: `${this.env.GCP_LOCATION}-aiplatform.googleapis.com`,
+      };
+      const predictionServiceClient = new PredictionServiceClient(
+        clientOptions,
+      );
+
+      const endpoint = `projects/${this.env.GCP_PROJECT_ID}/locations/${this.env.GCP_LOCATION}/publishers/google/models/${model}`;
+
+      const promptText = {
+        prompt: request.prompt,
+      };
+      const instanceValue = helpers.toValue(promptText);
+      const instances = [instanceValue];
+
+      const parameter = {
+        sampleCount: 1,
+        aspectRatio: "1:1",
+        safetyFilterLevel: "block_some",
+        personGeneration: "allow_adult",
+        ...request.parameters,
+      };
+      const parameters = helpers.toValue(parameter);
+
+      const predictRequest = {
+        endpoint,
+        instances,
+        parameters,
       };
 
-      const result = await generativeModel.generateContent(imageRequest);
+      // Make the prediction request
+      const [response] = (await (
+        predictionServiceClient.predict as unknown as (
+          req: unknown,
+        ) => Promise<any>
+      )(predictRequest as unknown)) as any;
+      const predictions = response.predictions;
 
-      // For image generation, we need to handle the response differently
-      // This is a simplified implementation - actual Vertex AI image generation
-      // may have different response formats and require additional processing
+      if (predictions && predictions.length > 0) {
+        const prediction = predictions[0];
 
-      if (result.response.candidates?.[0]) {
-        return {
-          success: true,
-          jobId: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          urls: [], // URLs would be populated from actual generation
-          metadata: {
-            model,
-            prompt: request.prompt,
-            timestamp: new Date().toISOString(),
-          },
-        };
+        // Extract the base64 image data
+        const bytesBase64Encoded =
+          prediction.structValue?.fields?.bytesBase64Encoded?.stringValue;
+
+        if (bytesBase64Encoded) {
+          return {
+            success: true,
+            jobId: `img_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            urls: [`data:image/png;base64,${bytesBase64Encoded}`],
+            metadata: {
+              model,
+              prompt: request.prompt,
+              timestamp: new Date().toISOString(),
+              format: "png",
+            },
+          };
+        }
       }
 
       return {
         success: false,
-        error: "No candidates returned from image generation",
+        error: "No image data returned from generation",
       };
     } catch (error) {
       console.error("Image generation error:", error);
@@ -172,25 +202,135 @@ Return only the improved prompt, nothing else.
     }
   }
 
+  private async getAccessToken(): Promise<string> {
+    // 1) Prefer ACCESS_TOKEN if provided (dev convenience)
+    if (process.env.ACCESS_TOKEN) return process.env.ACCESS_TOKEN;
+    // 2) Use ADC service account and extract Bearer token robustly
+    const auth = new GoogleAuth({
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    });
+    const client = await auth.getClient();
+    // Prefer request headers to avoid shape differences across versions
+    const headers = await (client as any).getRequestHeaders();
+    const authHeader = (headers.Authorization || headers.authorization) as
+      | string
+      | undefined;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      return authHeader.slice(7);
+    }
+    const tokenObj = await (client as any).getAccessToken();
+    const tokenStr =
+      typeof tokenObj === "string" ? tokenObj : (tokenObj?.token as string);
+    if (!tokenStr) throw new Error("Failed to acquire access token");
+    return tokenStr;
+  }
+
   async generateVideo(request: GenerationRequest): Promise<GenerationResponse> {
     try {
       const model = request.model || this.env.VERTEX_VIDEO_MODEL;
+      const lroMode = this.env.VERTEX_VIDEO_LRO_MODE || "mock";
 
-      // Video generation is typically a longer-running job
-      // This is a mock implementation for the video generation
-      // In practice, you'd submit a job and poll for completion
+      if (lroMode === "rest") {
+        const accessToken = await this.getAccessToken();
+        const endpoint = `https://${this.env.GCP_LOCATION}-aiplatform.googleapis.com/v1beta1/projects/${this.env.GCP_PROJECT_ID}/locations/${this.env.GCP_LOCATION}/publishers/google/models/${model}:predictLongRunning`;
+        const body = {
+          instances: [{ prompt: request.prompt }],
+          parameters: {
+            sampleCount: 1,
+            durationSeconds: 6,
+            aspectRatio: "16:9",
+            enhancePrompt: true,
+            ...(this.env.GCS_OUTPUT_BUCKET
+              ? { storageUri: this.env.GCS_OUTPUT_BUCKET }
+              : {}),
+            ...(request.parameters || {}),
+          },
+        };
 
-      const jobId = `vid_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            "x-goog-user-project": this.env.GCP_PROJECT_ID,
+          },
+          body: JSON.stringify(body),
+        } as RequestInit);
 
-      // Simulate job submission
+        if (!res.ok) {
+          const text = await res.text();
+          return { success: false, error: `REST LRO start failed: ${text}` };
+        }
+        const data = (await res.json()) as { name?: string };
+        if (!data.name) {
+          return { success: false, error: "REST LRO missing operation name" };
+        }
+        return {
+          success: true,
+          jobId: data.name,
+          metadata: {
+            model,
+            prompt: request.prompt,
+            timestamp: new Date().toISOString(),
+            mode: "rest",
+          },
+        };
+      }
+
+      if (lroMode === "sdk") {
+        const predictionClient = new PredictionServiceClient({
+          projectId: this.env.GCP_PROJECT_ID,
+          apiEndpoint: `${this.env.GCP_LOCATION}-aiplatform.googleapis.com`,
+        });
+        const endpoint = `projects/${this.env.GCP_PROJECT_ID}/locations/${this.env.GCP_LOCATION}/publishers/google/models/${model}`;
+        const instance = { prompt: request.prompt };
+        const parameters = {
+          sampleCount: 1,
+          durationSeconds: 6,
+          aspectRatio: "16:9",
+          enhancePrompt: true,
+          ...(request.parameters || {}),
+        };
+        const predictionRequest = {
+          endpoint,
+          instances: [helpers.toValue(instance)],
+          parameters: helpers.toValue(parameters),
+        } as unknown as Record<string, unknown>;
+        const anyClient = predictionClient as unknown as {
+          predictLongRunning?: (req: unknown) => Promise<any>;
+        };
+        if (typeof anyClient.predictLongRunning === "function") {
+          const [operation] = await anyClient.predictLongRunning(
+            predictionRequest,
+          );
+          const opName = (operation as any)?.name as string | undefined;
+          if (!opName) throw new Error("Missing operation name from SDK");
+          return {
+            success: true,
+            jobId: opName,
+            metadata: {
+              model,
+              prompt: request.prompt,
+              parameters,
+              operationName: opName,
+              timestamp: new Date().toISOString(),
+            },
+          };
+        }
+        console.warn(
+          "SDK predictLongRunning unavailable; falling back to mock LRO",
+        );
+      }
+
+      // mock
       return {
         success: true,
-        jobId,
+        jobId: `vid_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
         metadata: {
           model,
           prompt: request.prompt,
-          estimatedDuration: 60, // seconds
           timestamp: new Date().toISOString(),
+          mode: "mock",
         },
       };
     } catch (error) {
@@ -204,17 +344,87 @@ Return only the improved prompt, nothing else.
 
   async pollJobStatus(jobId: string): Promise<JobStatus> {
     try {
-      // This is a mock implementation for job polling
-      // In practice, you'd query the actual Vertex AI job status
+      if (jobId.startsWith("projects/")) {
+        const lroMode = this.env.VERTEX_VIDEO_LRO_MODE || "mock";
+        if (lroMode === "rest") {
+          const accessToken = await this.getAccessToken();
+          const modelPath = jobId.split("/operations/")[0];
+          const endpoint = `https://${this.env.GCP_LOCATION}-aiplatform.googleapis.com/v1/${modelPath}:fetchPredictOperation`;
+          const res = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "x-goog-user-project": this.env.GCP_PROJECT_ID,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ operationName: jobId }),
+          } as RequestInit);
+          if (!res.ok) {
+            return { status: "failed", error: `REST LRO poll failed: ${res.status}` };
+          }
+          const op = (await res.json()) as any;
+          if (!op.done) {
+            const progress = Number(op.metadata?.progressPercent ?? 50);
+            return { status: "running", progress: Math.min(isNaN(progress) ? 50 : progress, 99) };
+          }
+          if (op.error) {
+            return { status: "failed", error: op.error.message || "Operation failed" };
+          }
+          // Prefer videos.gcsUri; fallback to base64 bytes if provided
+          const videos = op.response?.videos as Array<{
+            gcsUri?: string;
+            bytesBase64Encoded?: string;
+            mimeType?: string;
+          }>;
+          if (Array.isArray(videos) && videos.length > 0) {
+            const v0 = videos[0];
+            if (v0?.gcsUri) {
+              return {
+                status: "complete",
+                progress: 100,
+                result: {
+                  urls: [v0.gcsUri],
+                  metadata: {
+                    format: "mp4",
+                    width: 1280,
+                    height: 720,
+                    durationSec: 6,
+                    operationId: jobId,
+                  },
+                },
+              };
+            }
+            if (v0?.bytesBase64Encoded) {
+              const mime = v0.mimeType || "video/mp4";
+              const dataUrl = `data:${mime};base64,${v0.bytesBase64Encoded}`;
+              return {
+                status: "complete",
+                progress: 100,
+                result: {
+                  urls: [dataUrl],
+                  metadata: {
+                    format: mime.includes("mp4") ? "mp4" : mime,
+                    width: 1280,
+                    height: 720,
+                    durationSec: 6,
+                    operationId: jobId,
+                  },
+                },
+              };
+            }
+          }
+          return { status: "failed", error: "No video URI found in REST response" };
+        }
+        // sdk mode or unknown -> treat as running
+        return { status: "running", progress: 50 };
+      }
 
+      // legacy mocks
       const isVideo = jobId.startsWith("vid_");
       const isImage = jobId.startsWith("img_");
-
-      // Simulate different job states based on time
       const now = Date.now();
       const jobTimestamp = parseInt(jobId.split("_")[1], 10);
-      const elapsed = (now - jobTimestamp) / 1000; // seconds
-
+      const elapsed = (now - jobTimestamp) / 1000;
       if (isImage) {
         if (elapsed < 5) {
           return { status: "running", progress: (elapsed / 5) * 100 };
@@ -226,16 +436,11 @@ Return only the improved prompt, nothing else.
               urls: [
                 `https://storage.googleapis.com/generated-images/${jobId}.png`,
               ],
-              metadata: {
-                format: "png",
-                width: 1024,
-                height: 1024,
-              },
+              metadata: { format: "png", width: 1024, height: 1024 },
             },
           };
         }
       }
-
       if (isVideo) {
         if (elapsed < 30) {
           return { status: "running", progress: (elapsed / 30) * 100 };
@@ -247,23 +452,14 @@ Return only the improved prompt, nothing else.
               urls: [
                 `https://storage.googleapis.com/generated-videos/${jobId}.mp4`,
               ],
-              metadata: {
-                format: "mp4",
-                duration: 6,
-                width: 1280,
-                height: 720,
-              },
+              metadata: { format: "mp4", duration: 6, width: 1280, height: 720 },
             },
           };
         }
       }
-
-      // If too much time has passed, consider it failed
-      return {
-        status: "failed",
-        error: "Generation timeout",
-      };
+      return { status: "failed", error: "Generation timeout" };
     } catch (error) {
+      console.error("Error polling job status:", error);
       return {
         status: "failed",
         error: `Failed to check job status: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -276,24 +472,15 @@ Return only the improved prompt, nothing else.
     guidance: string,
     type: "image" | "video",
   ): Promise<GenerationResponse> {
-    // Combine the original prompt with refinement guidance
     const refinedPrompt = `${originalPrompt}. ${guidance}`;
-
     if (type === "image") {
-      return this.generateImage({
-        prompt: refinedPrompt,
-        type: "image",
-      });
+      return this.generateImage({ prompt: refinedPrompt, type: "image" });
     } else {
-      return this.generateVideo({
-        prompt: refinedPrompt,
-        type: "video",
-      });
+      return this.generateVideo({ prompt: refinedPrompt, type: "video" });
     }
   }
 
   isHealthy(): boolean {
-    // Simple health check - in practice, you might ping Vertex AI
     return !!this.vertexAI && !!this.env.GCP_PROJECT_ID;
   }
 }

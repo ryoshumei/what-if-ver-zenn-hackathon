@@ -1,7 +1,20 @@
+import type { Timestamp } from "firebase/firestore";
 import { type NextRequest, NextResponse } from "next/server";
 import { createRequestLogger } from "../../../../lib/logging/logger";
 import { serverFirestore } from "../../../../lib/repositories/firestore";
 import { serverMediaAssets } from "../../../../lib/repositories/media";
+import { getAdminStorage } from "../../../../lib/firebase/server";
+
+// Helper function to convert Firestore timestamps to ISO strings
+function toISOString(value: unknown): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (value && typeof value === "object" && "toDate" in value) {
+    return (value as Timestamp).toDate().toISOString();
+  }
+  return new Date(value as string | number | Date).toISOString();
+}
 
 interface GenerationResponse {
   id: string;
@@ -57,8 +70,8 @@ export async function GET(
       status: generation.status,
       model: generation.model,
       refinementOf: generation.refinementOf,
-      createdAt: generation.createdAt.toISOString(),
-      updatedAt: generation.updatedAt.toISOString(),
+      createdAt: toISOString(generation.createdAt),
+      updatedAt: toISOString(generation.updatedAt),
     };
 
     // Include error if generation failed
@@ -66,49 +79,90 @@ export async function GET(
       response.error = generation.error;
     }
 
-    // If generation is complete, try to include the actual asset
+    // If generation is complete, include the asset URLs from the generation record
     if (generation.status === "complete") {
-      try {
-        const assets = await serverMediaAssets.getAssetsByGeneration(
-          generation.id,
-        );
-        if (assets.length > 0) {
-          // Return the first asset (main generation result)
-          const asset = assets[0];
-          response.asset = {
-            id: asset.id,
-            url: asset.url,
-            storagePath: asset.storagePath,
-            format: asset.format,
-            width: asset.width,
-            height: asset.height,
-            durationSec: asset.durationSec,
-            altText: asset.altText,
-            captions: asset.captions,
-            visibility: asset.visibility,
-          };
-        } else {
-          // Fallback to mock asset if no MediaAsset records exist yet
-          const mockAsset = {
-            id: `asset_${generation.id}`,
-            url: `https://storage.googleapis.com/generated-${generation.type}s/${generation.id}.${generation.type === "image" ? "png" : "mp4"}`,
-            storagePath: `assets/anonymous/${generation.id}/generated.${generation.type === "image" ? "png" : "mp4"}`,
-            format: generation.type === "image" ? "png" : "mp4",
-            width: generation.type === "image" ? 1024 : 1280,
-            height: generation.type === "image" ? 1024 : 720,
-            durationSec: generation.type === "video" ? 6 : null,
-            altText: null,
-            captions: null,
-            visibility: "private" as const,
-          };
-          response.asset = mockAsset;
+      // Check if we have assetUrls stored directly in the generation record
+      const assetUrls = (generation as any).assetUrls;
+      const metadata = (generation as any).metadata;
+
+      if (assetUrls && assetUrls.length > 0) {
+        // Use the actual generated asset URL
+        let url = assetUrls[0];
+        // If it's a GCS URI, generate a signed URL for client playback
+        if (url.startsWith("gs://")) {
+          try {
+            const withoutScheme = url.replace("gs://", "");
+            const bucketName = withoutScheme.split("/")[0];
+            const objectPath = withoutScheme.substring(bucketName.length + 1);
+            const bucket = getAdminStorage().bucket(bucketName);
+            const file = bucket.file(objectPath);
+            const [signedUrl] = await file.getSignedUrl({
+              action: "read",
+              expires: Date.now() + 60 * 60 * 1000, // 60 minutes
+            });
+            url = signedUrl;
+          } catch (e) {
+            // Fallback to original URL if signing fails
+          }
         }
-      } catch (error) {
-        logger.warn("Failed to load asset for completed generation", {
-          generationId: id,
-          error: (error as Error).message,
-        });
-        // Don't fail the request if asset loading fails
+
+        response.asset = {
+          id: `asset_${generation.id}`,
+          url,
+          storagePath: assetUrls[0],
+          format:
+            metadata?.format || (generation.type === "image" ? "png" : "mp4"),
+          width: metadata?.width || (generation.type === "image" ? 1024 : 1280),
+          height:
+            metadata?.height || (generation.type === "image" ? 1024 : 720),
+          durationSec:
+            metadata?.durationSec || (generation.type === "video" ? 6 : null),
+          altText: null,
+          captions: null,
+          visibility: "private" as const,
+        };
+      } else {
+        // Fallback: try to load from media assets
+        try {
+          const assets = await serverMediaAssets.getAssetsByGeneration(
+            generation.id,
+          );
+          if (assets.length > 0) {
+            const asset = assets[0];
+            response.asset = {
+              id: asset.id,
+              url: asset.url,
+              storagePath: asset.storagePath,
+              format: asset.format,
+              width: asset.width,
+              height: asset.height,
+              durationSec: asset.durationSec,
+              altText: asset.altText,
+              captions: asset.captions,
+              visibility: asset.visibility,
+            };
+          } else {
+            // Final fallback to mock asset
+            const mockAsset = {
+              id: `asset_${generation.id}`,
+              url: `/generated/${generation.id}.${generation.type === "image" ? "png" : "mp4"}`,
+              storagePath: `generated/${generation.id}.${generation.type === "image" ? "png" : "mp4"}`,
+              format: generation.type === "image" ? "png" : "mp4",
+              width: generation.type === "image" ? 1024 : 1280,
+              height: generation.type === "image" ? 1024 : 720,
+              durationSec: generation.type === "video" ? 6 : null,
+              altText: null,
+              captions: null,
+              visibility: "private" as const,
+            };
+            response.asset = mockAsset;
+          }
+        } catch (error) {
+          logger.warn("Failed to load asset for completed generation", {
+            generationId: id,
+            error: (error as Error).message,
+          });
+        }
       }
     }
 

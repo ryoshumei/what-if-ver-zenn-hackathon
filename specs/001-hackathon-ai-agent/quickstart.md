@@ -12,7 +12,7 @@ Set in `.env.local` (for local dev) and in Cloud Run secrets for production.
 ```
 # Google Cloud
 GCP_PROJECT_ID=your-gcp-project
-GCP_LOCATION=us-central1
+GCP_LOCATION=asia-northeast1-a
 VERTEX_CHAT_MODEL=gemini-2.5-flash
 VERTEX_PLAN_MODEL=gemini-2.5-pro
 VERTEX_IMAGE_MODEL=gemini-2.5-flash-image-preview
@@ -58,3 +58,5 @@ GET /api/generations/{id}
 ## Notes
 - Streaming endpoints may require Node runtime when fetching tokens programmatically.
 - Respect content policy: unsafe prompts are blocked with clear messaging.
+- check context7 for more details.
+- we prefer to use CLI

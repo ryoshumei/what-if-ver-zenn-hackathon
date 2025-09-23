@@ -34,8 +34,14 @@ export class MediaAssetRepository {
   private convertTimestamps<T>(data: Record<string, unknown>): T {
     const converted = { ...data };
     Object.keys(converted).forEach((key) => {
-      if (converted[key] && typeof converted[key].toDate === "function") {
-        converted[key] = converted[key].toDate();
+      const value = converted[key];
+      if (
+        value &&
+        typeof value === "object" &&
+        "toDate" in value &&
+        typeof (value as { toDate?: () => Date }).toDate === "function"
+      ) {
+        converted[key] = (value as { toDate: () => Date }).toDate();
       }
     });
     return converted as T;
@@ -200,9 +206,12 @@ export class MediaAssetRepository {
         url: uploadResult.url,
         storagePath: uploadResult.storagePath,
         format,
-        width: metadata.width || null,
-        height: metadata.height || null,
-        durationSec: metadata.durationSec || null,
+        width: typeof metadata.width === "number" ? metadata.width : null,
+        height: typeof metadata.height === "number" ? metadata.height : null,
+        durationSec:
+          typeof metadata.durationSec === "number"
+            ? metadata.durationSec
+            : null,
         altText: null, // Will be set when publishing
         captions: null, // Will be set when publishing
         visibility: "private",

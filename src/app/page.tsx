@@ -148,7 +148,7 @@ export default function Home() {
           throw new Error("Failed to start generation");
         }
 
-        const { generationId } = await generateResponse.json();
+        const { id: generationId } = await generateResponse.json();
 
         // Add generation status
         const newGeneration: GenerationStatus = {
@@ -256,7 +256,7 @@ export default function Home() {
           throw new Error("Failed to start refinement");
         }
 
-        const { newGenerationId } = await response.json();
+        const { id: newGenerationId } = await response.json();
 
         // Add refinement message
         const refinementMessage: ChatMessageData = {
@@ -399,15 +399,17 @@ export default function Home() {
                 <div key={message.id}>
                   <ChatMessage message={message} generation={generation} />
 
-                  {/* Show generation result separately if this message has a generation */}
-                  {generation && (
-                    <div className="mt-2">
-                      <GenerationResult
-                        generation={generation}
-                        onRefine={handleRefine}
-                      />
-                    </div>
-                  )}
+                  {/* Show generation result only for completion messages */}
+                  {generation &&
+                    generation.status === "complete" &&
+                    message.content.includes("ready") && (
+                      <div className="mt-2">
+                        <GenerationResult
+                          generation={generation}
+                          onRefine={handleRefine}
+                        />
+                      </div>
+                    )}
                 </div>
               );
             })

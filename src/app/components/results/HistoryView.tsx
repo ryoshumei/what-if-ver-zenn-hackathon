@@ -51,7 +51,7 @@ export default function HistoryView({
     "all",
   );
   const [filterStatus, setFilterStatus] = useState<
-    "all" | "complete" | "failed"
+    "all" | "queued" | "running" | "complete" | "failed"
   >("all");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -209,6 +209,8 @@ export default function HistoryView({
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
         >
           <option value="all">All Status</option>
+          <option value="queued">Queued</option>
+          <option value="running">Running</option>
           <option value="complete">Complete</option>
           <option value="failed">Failed</option>
         </select>

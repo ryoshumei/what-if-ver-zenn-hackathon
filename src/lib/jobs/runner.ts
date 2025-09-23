@@ -4,9 +4,7 @@ import {
   createPerformanceLogger,
 } from "../logging/logger";
 import type { Generation } from "../models/Generation";
-import type { MediaAsset } from "../models/MediaAsset";
 import { serverFirestore } from "../repositories/firestore";
-import { serverMediaAssets } from "../repositories/media";
 import { serverStorage } from "../repositories/storage";
 
 export interface JobResult {
@@ -186,25 +184,51 @@ export class GenerationJobRunner {
           return { success: false, error: result.error };
         }
 
-        // For now, we simulate the image generation result
-        // In a real implementation, you'd get the actual generated image data
-        const mockImageData = await this.createMockAsset(generation.type);
-        const assetUrl = await this.saveAsset(
-          generation.id,
-          "anonymous",
-          mockImageData,
-          "png",
-        );
+        // Use actual generated image data
+        if (result.urls && result.urls.length > 0) {
+          const assetUrls: string[] = [];
+
+          for (const imageUrl of result.urls) {
+            if (imageUrl.startsWith("data:image/")) {
+              // Extract base64 data from data URL
+              const matches = imageUrl.match(/^data:image\/\w+;base64,(.+)$/);
+              if (matches) {
+                const base64Data = matches[1];
+                const imageBuffer = Buffer.from(base64Data, "base64");
+
+                // Save using Firebase Storage
+                const storageResult = await serverStorage.saveGeneratedAsset(
+                  "anonymous", // TODO: use real user ID
+                  generation.id,
+                  imageBuffer,
+                  "png",
+                  {
+                    model: generation.model,
+                    width: 1024,
+                    height: 1024,
+                  },
+                );
+                assetUrls.push(storageResult.url);
+              }
+            }
+          }
+
+          return {
+            success: true,
+            assetUrls,
+            metadata: {
+              format: "png",
+              width: 1024,
+              height: 1024,
+              model: generation.model,
+              ...result.metadata,
+            },
+          };
+        }
 
         return {
-          success: true,
-          assetUrls: [assetUrl],
-          metadata: {
-            format: "png",
-            width: 1024,
-            height: 1024,
-            model: generation.model,
-          },
+          success: false,
+          error: "No image URLs returned from generation",
         };
       } else if (generation.type === "video") {
         const result = await vertexAdapter.generateVideo({
@@ -217,25 +241,51 @@ export class GenerationJobRunner {
           return { success: false, error: result.error };
         }
 
-        // For now, we simulate the video generation result
-        const mockVideoData = await this.createMockAsset(generation.type);
-        const assetUrl = await this.saveAsset(
-          generation.id,
-          "anonymous",
-          mockVideoData,
-          "mp4",
-        );
+        // Poll the Vertex AI operation until completion
+        if (result.jobId) {
+          let attempts = 0;
+          const maxAttempts = 120; // 10 minutes max (5 second intervals)
+
+          while (attempts < maxAttempts) {
+            const jobStatus = await vertexAdapter.pollJobStatus(result.jobId);
+
+            if (jobStatus.status === "complete" && jobStatus.result) {
+              // Download video from Vertex AI Storage URI and save to our storage
+              const videoUrl = jobStatus.result.urls[0];
+
+              // For now, we'll store the Vertex AI URL directly
+              // In production, you'd download and re-upload to your own storage
+              return {
+                success: true,
+                assetUrls: [videoUrl],
+                metadata: {
+                  format: "mp4",
+                  width: 1280,
+                  height: 720,
+                  durationSec: 6,
+                  model: generation.model,
+                  vertexOperationId: result.jobId,
+                  ...jobStatus.result.metadata,
+                },
+              };
+            } else if (jobStatus.status === "failed") {
+              return {
+                success: false,
+                error: jobStatus.error || "Video generation failed",
+              };
+            }
+
+            // Wait 5 seconds before polling again
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+            attempts++;
+          }
+
+          return { success: false, error: "Video generation timed out" };
+        }
 
         return {
-          success: true,
-          assetUrls: [assetUrl],
-          metadata: {
-            format: "mp4",
-            width: 1280,
-            height: 720,
-            durationSec: 6,
-            model: generation.model,
-          },
+          success: false,
+          error: "No job ID returned from video generation",
         };
       }
 
@@ -256,191 +306,29 @@ export class GenerationJobRunner {
     result: JobResult,
   ): Promise<void> {
     try {
-      // Create MediaAsset records for each generated asset
-      const assets: MediaAsset[] = [];
-
-      if (result.assetUrls && result.metadata) {
-        for (const _assetUrl of result.assetUrls) {
-          // Create mock asset data for the MediaAsset record
-          const mockAssetData = await this.createMockAsset(generation.type);
-
-          const asset = await serverMediaAssets.createAssetFromGeneration(
-            generation,
-            mockAssetData,
-            result.metadata.format,
-            result.metadata,
-          );
-
-          assets.push(asset);
-        }
-      }
-
-      // Update generation status to complete
+      // Update generation status to complete with asset URLs
       await serverFirestore.updateGeneration(generation.id, {
         updatedAt: new Date(),
         status: "complete",
+        // Store the asset URLs directly in the generation record for now
+        assetUrls: result.assetUrls,
+        metadata: result.metadata,
       });
 
       console.log(
-        `Generation ${generation.id} completed with ${assets.length} assets created`,
+        `Generation ${generation.id} completed with ${result.assetUrls?.length || 0} assets created`,
       );
     } catch (error) {
       console.error(`Error completing generation ${generation.id}:`, error);
 
-      // Mark as failed if asset creation fails
+      // Mark as failed if completion fails
       await serverFirestore.updateGeneration(generation.id, {
         updatedAt: new Date(),
         status: "failed",
-        error: "Failed to create media assets",
+        error: "Failed to complete generation",
       });
 
       throw error;
-    }
-  }
-
-  private async saveAsset(
-    generationId: string,
-    userId: string,
-    assetData: Buffer,
-    format: string,
-  ): Promise<string> {
-    try {
-      const uploadResult = await serverStorage.saveGeneratedAsset(
-        userId,
-        generationId,
-        assetData,
-        format,
-        {
-          generatedAt: new Date().toISOString(),
-          format,
-        },
-      );
-
-      return uploadResult.url;
-    } catch (error) {
-      console.error("Failed to save asset:", error);
-      throw new Error("Failed to save generated asset");
-    }
-  }
-
-  private async createMockAsset(type: "image" | "video"): Promise<Buffer> {
-    // Create minimal mock asset data for testing
-    if (type === "image") {
-      // Minimal PNG header (1x1 transparent pixel)
-      return Buffer.from([
-        0x89,
-        0x50,
-        0x4e,
-        0x47,
-        0x0d,
-        0x0a,
-        0x1a,
-        0x0a, // PNG signature
-        0x00,
-        0x00,
-        0x00,
-        0x0d,
-        0x49,
-        0x48,
-        0x44,
-        0x52, // IHDR chunk
-        0x00,
-        0x00,
-        0x00,
-        0x01,
-        0x00,
-        0x00,
-        0x00,
-        0x01, // 1x1 dimensions
-        0x08,
-        0x06,
-        0x00,
-        0x00,
-        0x00,
-        0x1f,
-        0x15,
-        0xc4,
-        0x89,
-        0x00,
-        0x00,
-        0x00,
-        0x0a,
-        0x49,
-        0x44,
-        0x41,
-        0x54,
-        0x78,
-        0x9c,
-        0x63,
-        0x00,
-        0x01,
-        0x00,
-        0x00,
-        0x05,
-        0x00,
-        0x01,
-        0x0d,
-        0x0a,
-        0x2d,
-        0xb4,
-        0x00,
-        0x00,
-        0x00,
-        0x00,
-        0x49,
-        0x45,
-        0x4e,
-        0x44,
-        0xae,
-        0x42,
-        0x60,
-        0x82,
-      ]);
-    } else {
-      // Minimal MP4 header for a very short video
-      return Buffer.from([
-        0x00,
-        0x00,
-        0x00,
-        0x20,
-        0x66,
-        0x74,
-        0x79,
-        0x70, // ftyp box
-        0x69,
-        0x73,
-        0x6f,
-        0x6d,
-        0x00,
-        0x00,
-        0x02,
-        0x00,
-        0x69,
-        0x73,
-        0x6f,
-        0x6d,
-        0x69,
-        0x73,
-        0x6f,
-        0x32,
-        0x61,
-        0x76,
-        0x63,
-        0x31,
-        0x6d,
-        0x70,
-        0x34,
-        0x31,
-        // Add minimal mdat box
-        0x00,
-        0x00,
-        0x00,
-        0x08,
-        0x6d,
-        0x64,
-        0x61,
-        0x74,
-      ]);
     }
   }
 
@@ -464,10 +352,20 @@ export class GenerationJobRunner {
   }
 }
 
-// Singleton instance
+// Singleton instance with global protection against multiple starts
 export const jobRunner = new GenerationJobRunner();
 
-// Auto-start in production (not in test environment)
-if (process.env.NODE_ENV === "production" && typeof window === "undefined") {
+// Global flag to prevent multiple auto-starts across imports
+declare global {
+  var __JOB_RUNNER_STARTED__: boolean | undefined;
+}
+
+// Auto-start in development and production (not in test environment)
+if (
+  process.env.NODE_ENV !== "test" &&
+  typeof window === "undefined" &&
+  !globalThis.__JOB_RUNNER_STARTED__
+) {
+  globalThis.__JOB_RUNNER_STARTED__ = true;
   jobRunner.start().catch(console.error);
 }

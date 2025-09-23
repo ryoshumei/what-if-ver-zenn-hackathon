@@ -4,6 +4,7 @@ import {
   ref,
   uploadBytes,
 } from "firebase/storage";
+import type { Storage as AdminStorage } from "firebase-admin/storage";
 import { storage } from "../firebase/client";
 import { getAdminStorage } from "../firebase/server";
 import { generateThumbnailPath } from "../models/MediaAsset";
@@ -36,31 +37,56 @@ export class StorageRepository {
     metadata?: Record<string, unknown>,
   ): Promise<UploadResult> {
     try {
-      const storageRef = ref(this.storageInstance as never, path);
-
-      let uploadResult: unknown;
+      // Convert metadata to Firebase-compatible format
+      const customMetadata: { [key: string]: string } = {};
+      if (metadata) {
+        Object.keys(metadata).forEach((key) => {
+          const value = metadata[key];
+          customMetadata[key] =
+            typeof value === "string" ? value : String(value);
+        });
+      }
 
       if (this.isServer && Buffer.isBuffer(file)) {
-        // Server-side upload with Buffer
-        uploadResult = await uploadBytes(storageRef, file, {
-          customMetadata: metadata,
+        // Server-side upload with Admin SDK
+        const bucket = (this.storageInstance as AdminStorage).bucket();
+        const fileRef = bucket.file(path);
+
+        // Upload the buffer
+        await fileRef.save(file, {
+          metadata: {
+            metadata: customMetadata,
+          },
         });
+
+        // Make the file publicly readable
+        await fileRef.makePublic();
+
+        // Get the public URL
+        const url = `https://storage.googleapis.com/${bucket.name}/${path}`;
+
+        return {
+          url,
+          storagePath: path,
+          metadata: customMetadata,
+        };
       } else if (file instanceof File) {
-        // Client-side upload with File
-        uploadResult = await uploadBytes(storageRef, file, {
-          customMetadata: metadata,
+        // Client-side upload with Client SDK
+        const storageRef = ref(this.storageInstance as never, path);
+        const uploadResult = await uploadBytes(storageRef, file, {
+          customMetadata,
         });
+
+        const url = await getDownloadURL(uploadResult.ref);
+
+        return {
+          url,
+          storagePath: path,
+          metadata: customMetadata,
+        };
       } else {
         throw new Error("Invalid file type for upload");
       }
-
-      const url = await getDownloadURL(uploadResult.ref);
-
-      return {
-        url,
-        storagePath: path,
-        metadata: uploadResult.metadata,
-      };
     } catch (error) {
       console.error("Error uploading asset:", error);
       throw error;
@@ -79,7 +105,7 @@ export class StorageRepository {
       }
 
       // Server-side: generate signed URL with admin SDK
-      const bucket = (this.storageInstance as never).bucket();
+      const bucket = (this.storageInstance as AdminStorage).bucket();
       const file = bucket.file(path);
 
       const expiresIn = (options.expiresIn || 60) * 60 * 1000; // Convert minutes to milliseconds
@@ -182,7 +208,7 @@ export class StorageRepository {
       }
 
       // Server-side: get full metadata
-      const bucket = (this.storageInstance as never).bucket();
+      const bucket = (this.storageInstance as AdminStorage).bucket();
       const file = bucket.file(path);
 
       const [metadata] = await file.getMetadata();
@@ -199,7 +225,7 @@ export class StorageRepository {
         throw new Error("Asset listing is only available server-side");
       }
 
-      const bucket = (this.storageInstance as never).bucket();
+      const bucket = (this.storageInstance as AdminStorage).bucket();
       const searchPrefix = prefix
         ? `assets/${userId}/${prefix}`
         : `assets/${userId}/`;
@@ -221,7 +247,7 @@ export class StorageRepository {
         throw new Error("Asset copying is only available server-side");
       }
 
-      const bucket = (this.storageInstance as never).bucket();
+      const bucket = (this.storageInstance as AdminStorage).bucket();
       const sourceFile = bucket.file(sourcePath);
       const destinationFile = bucket.file(destinationPath);
 
@@ -238,7 +264,7 @@ export class StorageRepository {
         return null; // Client can't access file size directly
       }
 
-      const bucket = (this.storageInstance as never).bucket();
+      const bucket = (this.storageInstance as AdminStorage).bucket();
       const file = bucket.file(path);
 
       const [metadata] = await file.getMetadata();
@@ -255,7 +281,7 @@ export class StorageRepository {
         throw new Error("Asset cleanup is only available server-side");
       }
 
-      const bucket = (this.storageInstance as never).bucket();
+      const bucket = (this.storageInstance as AdminStorage).bucket();
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - expirationDays);
 

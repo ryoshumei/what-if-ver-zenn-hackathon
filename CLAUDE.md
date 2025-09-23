@@ -140,3 +140,6 @@ This project follows Zenn Hackathon rules embedded in `.specify/memory/constitut
 - **Google Cloud AI**: Vertex AI as the AI provider
 - **Public repository**: This GitHub repo serves as submission artifact
 - **Article submission**: Draft at `docs/zenn-draft.md`
+
+## documents tool
+- **context7**: MCP

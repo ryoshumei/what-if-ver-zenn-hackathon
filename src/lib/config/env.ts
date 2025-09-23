@@ -10,6 +10,12 @@ const envSchema = z.object({
   VERTEX_PLAN_MODEL: z.string().min(1),
   VERTEX_IMAGE_MODEL: z.string().min(1),
   VERTEX_VIDEO_MODEL: z.string().min(1),
+  // LRO mode for video generation: mock (default), sdk, rest
+  VERTEX_VIDEO_LRO_MODE: z
+    .enum(["mock", "sdk", "rest"]) // sdk attempts client LRO; rest uses HTTP LRO
+    .default("mock"),
+  // Optional GCS bucket for Veo outputs (gs://bucket/prefix/)
+  GCS_OUTPUT_BUCKET: z.string().optional(),
 
   // Firebase Client (public)
   NEXT_PUBLIC_FIREBASE_API_KEY: z.string().min(1),

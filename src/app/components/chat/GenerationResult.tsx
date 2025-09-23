@@ -106,13 +106,15 @@ const GenerationResult = memo(function GenerationResult({
             className="w-full h-auto rounded-lg"
             poster={asset.url.replace(".mp4", "_thumbnail.jpg")} // Attempt to use thumbnail
           >
-            <track
-              kind="captions"
-              src={asset.captions || ""}
-              srcLang="en"
-              label="English"
-              default={!!asset.captions}
-            />
+            {asset.captions && (
+              <track
+                kind="captions"
+                src={asset.captions}
+                srcLang="en"
+                label="English"
+                default
+              />
+            )}
             Your browser does not support the video tag.
           </video>
           {asset.captions && (
