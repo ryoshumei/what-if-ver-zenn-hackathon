@@ -16,6 +16,8 @@ const envSchema = z.object({
     .default("mock"),
   // Optional GCS bucket for Veo outputs (gs://bucket/prefix/)
   GCS_OUTPUT_BUCKET: z.string().optional(),
+  // Optional public bucket (name only) to host generated files persistently
+  PUBLIC_GCS_BUCKET: z.string().optional(),
 
   // Firebase Client (public)
   NEXT_PUBLIC_FIREBASE_API_KEY: z.string().min(1),

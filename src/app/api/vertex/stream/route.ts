@@ -1,5 +1,6 @@
-// Comments: Edge API route proxying Vertex AI streaming to the client as a ReadableStream.
-export const runtime = "edge";
+// Comments: Node runtime proxying Vertex AI streaming to the client as a ReadableStream via ADC.
+export const runtime = "nodejs";
+import { GoogleAuth } from "google-auth-library";
 
 type Env = {
   GCP_PROJECT_ID?: string;
@@ -21,17 +22,28 @@ export async function POST(request: Request) {
       });
     }
 
-    const _accessTokenResp = await fetch(
-      "https://oauth2.googleapis.com/token",
-      {
-        method: "HEAD",
-      },
-    );
-    // Comments: In production, obtain ADC on server (workload identity / metadata). For local dev, proxy token via server env.
-    const accessToken = process.env.ACCESS_TOKEN;
+    // Validate prompt
+    if (!prompt || !String(prompt).trim()) {
+      return new Response(JSON.stringify({ error: "Prompt is required" }), {
+        status: 400,
+      });
+    }
+
+    // Obtain access token via ADC (service account or user creds)
+    const auth = new GoogleAuth({
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    });
+    const client = await auth.getClient();
+    const headers = await (client as any).getRequestHeaders();
+    const authHeader = (headers.Authorization || headers.authorization) as
+      | string
+      | undefined;
+    const accessToken = authHeader?.startsWith("Bearer ")
+      ? authHeader.slice(7)
+      : (await (client as any).getAccessToken()).token || undefined;
     if (!accessToken) {
       return new Response(
-        JSON.stringify({ error: "Missing ACCESS_TOKEN on server" }),
+        JSON.stringify({ error: "Failed to acquire access token via ADC" }),
         { status: 500 },
       );
     }
@@ -43,6 +55,7 @@ export async function POST(request: Request) {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
+        "x-goog-user-project": projectId,
       },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: String(prompt ?? "") }] }],

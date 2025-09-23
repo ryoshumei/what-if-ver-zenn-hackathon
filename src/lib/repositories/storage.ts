@@ -8,6 +8,7 @@ import type { Storage as AdminStorage } from "firebase-admin/storage";
 import { storage } from "../firebase/client";
 import { getAdminStorage } from "../firebase/server";
 import { generateThumbnailPath } from "../models/MediaAsset";
+import { getEnv } from "../config/env";
 
 export interface UploadResult {
   url: string;
@@ -256,6 +257,27 @@ export class StorageRepository {
       console.error("Error copying asset:", error);
       throw error;
     }
+  }
+
+  async publishGcsUriToPublicBucket(gcsUri: string): Promise<string> {
+    if (!this.isServer) throw new Error("Publishing requires server-side");
+    const env = getEnv();
+    if (!env.PUBLIC_GCS_BUCKET) throw new Error("PUBLIC_GCS_BUCKET not set");
+
+    if (!gcsUri.startsWith("gs://")) {
+      throw new Error("Expected gs:// URI");
+    }
+    const withoutScheme = gcsUri.replace("gs://", "");
+    const _srcBucket = withoutScheme.split("/")[0];
+    const srcObjectPath = withoutScheme.substring(_srcBucket.length + 1);
+
+    const admin = this.storageInstance as AdminStorage;
+    const src = admin.bucket(_srcBucket).file(srcObjectPath);
+    const dest = admin.bucket(env.PUBLIC_GCS_BUCKET).file(srcObjectPath);
+
+    await src.copy(dest);
+    await dest.makePublic();
+    return `https://storage.googleapis.com/${env.PUBLIC_GCS_BUCKET}/${srcObjectPath}`;
   }
 
   async getAssetSize(path: string): Promise<number | null> {

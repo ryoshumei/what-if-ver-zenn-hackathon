@@ -250,11 +250,28 @@ export class GenerationJobRunner {
             const jobStatus = await vertexAdapter.pollJobStatus(result.jobId);
 
             if (jobStatus.status === "complete" && jobStatus.result) {
-              // Download video from Vertex AI Storage URI and save to our storage
-              const videoUrl = jobStatus.result.urls[0];
+              // Publish video to public bucket if configured
+              let videoUrl = jobStatus.result.urls[0];
+              if (videoUrl.startsWith("gs://")) {
+                try {
+                  videoUrl = await serverStorage.publishGcsUriToPublicBucket(
+                    videoUrl,
+                  );
+                } catch (e) {
+                  console.warn("Failed to publish to public bucket", e);
+                }
+              }
 
-              // For now, we'll store the Vertex AI URL directly
-              // In production, you'd download and re-upload to your own storage
+              // Try to publish thumbnail if present (convention: _thumbnail.jpg)
+              try {
+                const thumbGs = jobStatus.result.urls[0].replace(
+                  /\.mp4(\?.*)?$/,
+                  "_thumbnail.jpg",
+                );
+                if (thumbGs.startsWith("gs://")) {
+                  await serverStorage.publishGcsUriToPublicBucket(thumbGs);
+                }
+              } catch {}
               return {
                 success: true,
                 assetUrls: [videoUrl],
