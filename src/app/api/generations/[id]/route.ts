@@ -166,6 +166,22 @@ export async function GET(
       }
     }
 
+    // Final safeguard: if asset URL is still a GCS URI, sign it for playback
+    if (response.asset && response.asset.url && response.asset.url.startsWith("gs://")) {
+      try {
+        const withoutScheme = response.asset.url.replace("gs://", "");
+        const bucketName = withoutScheme.split("/")[0];
+        const objectPath = withoutScheme.substring(bucketName.length + 1);
+        const bucket = getAdminStorage().bucket(bucketName);
+        const file = bucket.file(objectPath);
+        const [signedUrl] = await file.getSignedUrl({
+          action: "read",
+          expires: Date.now() + 60 * 60 * 1000,
+        });
+        response.asset.url = signedUrl;
+      } catch (e) {}
+    }
+
     logger.info("Generation status retrieved", {
       generationId: id,
       status: generation.status,
