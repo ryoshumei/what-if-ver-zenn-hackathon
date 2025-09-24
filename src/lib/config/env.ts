@@ -2,14 +2,14 @@ import { z } from "zod";
 
 const envSchema = z.object({
   // Google Cloud
-  GCP_PROJECT_ID: z.string().min(1),
-  GCP_LOCATION: z.string().min(1),
+  GCP_PROJECT_ID: z.string().min(1).default("demo-project"),
+  GCP_LOCATION: z.string().min(1).default("us-central1"),
 
   // Vertex AI Models
-  VERTEX_CHAT_MODEL: z.string().min(1),
-  VERTEX_PLAN_MODEL: z.string().min(1),
-  VERTEX_IMAGE_MODEL: z.string().min(1),
-  VERTEX_VIDEO_MODEL: z.string().min(1),
+  VERTEX_CHAT_MODEL: z.string().min(1).default("gemini-1.5-pro"),
+  VERTEX_PLAN_MODEL: z.string().min(1).default("gemini-1.5-pro"),
+  VERTEX_IMAGE_MODEL: z.string().min(1).default("imagen-3.0-generate-001"),
+  VERTEX_VIDEO_MODEL: z.string().min(1).default("veo-3.0-fast-generate-001"),
   // LRO mode for video generation: mock (default), sdk, rest
   VERTEX_VIDEO_LRO_MODE: z
     .enum(["mock", "sdk", "rest"]) // sdk attempts client LRO; rest uses HTTP LRO
@@ -20,11 +20,17 @@ const envSchema = z.object({
   PUBLIC_GCS_BUCKET: z.string().optional(),
 
   // Firebase Client (public)
-  NEXT_PUBLIC_FIREBASE_API_KEY: z.string().min(1),
-  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: z.string().min(1),
-  NEXT_PUBLIC_FIREBASE_PROJECT_ID: z.string().min(1),
-  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: z.string().min(1),
-  NEXT_PUBLIC_FIREBASE_APP_ID: z.string().min(1),
+  NEXT_PUBLIC_FIREBASE_API_KEY: z.string().min(1).default("demo-api-key"),
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: z
+    .string()
+    .min(1)
+    .default("demo.firebaseapp.com"),
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: z.string().min(1).default("demo-project"),
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: z
+    .string()
+    .min(1)
+    .default("demo.appspot.com"),
+  NEXT_PUBLIC_FIREBASE_APP_ID: z.string().min(1).default("demo-app-id"),
 
   // Optional development token for Edge routes
   ACCESS_TOKEN: z.string().optional(),
