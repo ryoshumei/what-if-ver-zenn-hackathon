@@ -290,7 +290,9 @@ export class StorageRepository {
       const file = bucket.file(path);
 
       const [metadata] = await file.getMetadata();
-      return parseInt(metadata.size, 10) || null;
+      const sizeStr = String((metadata as any).size ?? "");
+      const sizeNum = parseInt(sizeStr, 10);
+      return Number.isNaN(sizeNum) ? null : sizeNum;
     } catch (error) {
       console.error("Error getting asset size:", error);
       return null;
