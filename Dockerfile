@@ -21,5 +21,6 @@ ENV PORT=3000
 ENV HOST=0.0.0.0
 COPY --from=builder /app .
 EXPOSE 3000
-CMD ["npm","run","start","--","-p","${PORT}"]
+# Use shell form so ${PORT} is expanded by the shell in Cloud Run
+CMD sh -c "npm run start -- -p ${PORT}"
 
