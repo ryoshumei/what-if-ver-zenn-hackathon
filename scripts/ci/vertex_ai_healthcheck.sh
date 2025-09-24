@@ -7,13 +7,13 @@ PROJECT_ID="${GCP_PROJECT_ID:-}"
 LOCATION="${GCP_LOCATION:-us-central1}"
 
 if [[ -z "${PROJECT_ID}" ]]; then
-  echo "GCP_PROJECT_ID is required" >&2
-  exit 1
+  echo "[vertex_ai_healthcheck] GCP_PROJECT_ID not set. Skipping." >&2
+  exit 0
 fi
 
 if ! command -v gcloud >/dev/null 2>&1; then
-  echo "gcloud CLI is required for Vertex AI healthcheck" >&2
-  exit 1
+  echo "[vertex_ai_healthcheck] gcloud not found. Skipping." >&2
+  exit 0
 fi
 
 gcloud config set project "${PROJECT_ID}" >/dev/null

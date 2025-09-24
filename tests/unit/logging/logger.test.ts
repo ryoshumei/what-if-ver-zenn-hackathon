@@ -17,11 +17,10 @@ describe("Logger", () => {
     warn: ReturnType<typeof vi.spyOn>;
     error: ReturnType<typeof vi.spyOn>;
   };
-  const originalEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
     // Set NODE_ENV to development for console logging behavior
-    process.env.NODE_ENV = "development";
+    vi.stubEnv("NODE_ENV", "development");
 
     consoleSpy = {
       log: vi.spyOn(console, "log").mockImplementation(() => {}),
@@ -34,7 +33,7 @@ describe("Logger", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    process.env.NODE_ENV = originalEnv;
+    vi.unstubAllEnvs();
   });
 
   describe("Logger class", () => {
@@ -280,7 +279,7 @@ describe("Logger", () => {
     });
 
     it("should create generation logger", () => {
-      const logger = createGenerationLogger("gen-123", "user-456");
+      const logger = createGenerationLogger("gen-123", "video", "user-456");
       expect(logger).toBeInstanceOf(Logger);
 
       logger.info("generation message");
@@ -295,14 +294,12 @@ describe("Logger", () => {
   });
 
   describe("Environment-specific behavior", () => {
-    const originalEnv = process.env.NODE_ENV;
-
     afterEach(() => {
-      process.env.NODE_ENV = originalEnv;
+      vi.unstubAllEnvs();
     });
 
     it("should use console logging in development", () => {
-      process.env.NODE_ENV = "development";
+      vi.stubEnv("NODE_ENV", "development");
 
       const logger = new Logger();
       logger.info("development message");
@@ -311,7 +308,7 @@ describe("Logger", () => {
     });
 
     it("should use structured logging in production", () => {
-      process.env.NODE_ENV = "production";
+      vi.stubEnv("NODE_ENV", "production");
 
       const logger = new Logger();
       logger.info("production message");
