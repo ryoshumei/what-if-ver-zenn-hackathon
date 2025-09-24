@@ -8,6 +8,10 @@ node_modules
 *.log
 coverage
 dist
-.env*
+# allow .env.production to pass for build-time env
+.env
+.env.local
+.env.development
+.env.test
 .venv
 
