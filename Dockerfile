@@ -8,6 +8,8 @@ RUN npm ci --no-audit --no-fund
 FROM node:20-slim AS builder
 WORKDIR /app
 ENV NODE_ENV=production
+# Inject environment at build time for Next static analysis
+COPY .env.production .env.production
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
