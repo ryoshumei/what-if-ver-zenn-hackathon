@@ -48,3 +48,6 @@ next-env.d.ts
 /N
 /pglite-debug.log
 /storage.rules
+/.playwright-mcp/
+/playwright-report/
+/test-results/
