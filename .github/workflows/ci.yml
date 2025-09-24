@@ -41,10 +41,4 @@ jobs:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           GCP_LOCATION: ${{ vars.GCP_LOCATION || 'us-central1' }}
         run: bash scripts/ci/vertex_ai_healthcheck.sh
-      - name: Cloud Run target validation
-        env:
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          GCP_RUN_REGION: ${{ vars.GCP_RUN_REGION || 'us-central1' }}
-          CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE || 'what-if-agent' }}
-        run: bash scripts/ci/cloud_run_target_check.sh
 

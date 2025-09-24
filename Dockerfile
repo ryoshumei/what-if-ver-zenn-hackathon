@@ -8,6 +8,8 @@ RUN npm ci --no-audit --no-fund
 FROM node:20-slim AS builder
 WORKDIR /app
 ENV NODE_ENV=production
+# Inject environment at build time for Next static analysis
+COPY .env.production .env.production
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
@@ -19,5 +21,6 @@ ENV PORT=3000
 ENV HOST=0.0.0.0
 COPY --from=builder /app .
 EXPOSE 3000
-CMD ["npm","run","start","--","-p","${PORT}"]
+# Use shell form so ${PORT} is expanded by the shell in Cloud Run
+CMD sh -c "npm run start -- -p ${PORT}"
 

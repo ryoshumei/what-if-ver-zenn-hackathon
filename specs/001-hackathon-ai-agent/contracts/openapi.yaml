@@ -1,0 +1,292 @@
+openapi: 3.1.0
+info:
+  title: What If Visualizer API
+  version: 0.1.0
+  description: API contracts for prompt-driven image/video generation, refinement, publishing, and feed.
+paths:
+  /api/vertex/stream:
+    post:
+      summary: Stream chat/planning responses from Vertex AI
+      description: Streams model tokens for planning or basic chat. Development-only until secured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prompt:
+                  type: string
+              required: [prompt]
+      responses:
+        "200":
+          description: Streamed JSON chunks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VertexStreamChunk'
+  /api/generations:
+    post:
+      summary: Create a new generation job (image or video)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGenerationRequest'
+      responses:
+        "202":
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Generation'
+  /api/generations/{id}:
+    get:
+      summary: Get generation status and result
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Generation'
+  /api/generations/{id}/refine:
+    post:
+      summary: Refine a generation with additional guidance
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefineRequest'
+      responses:
+        "202":
+          description: Refinement job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Generation'
+  /api/feedback:
+    post:
+      summary: Submit alignment feedback for a generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        "204":
+          description: Recorded
+  /api/publish:
+    post:
+      summary: Publish a generation to the community feed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishRequest'
+      responses:
+        "201":
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommunityPost'
+  /api/feed:
+    get:
+      summary: List public community posts
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 12
+      responses:
+        "200":
+          description: Paged feed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CommunityPost'
+                  nextPage:
+                    type: integer
+                    nullable: true
+components:
+  schemas:
+    CreateGenerationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [image, video]
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        guidance:
+          type: string
+          nullable: true
+        language:
+          type: string
+          enum: [en, zh-CN, ja, unknown]
+          default: unknown
+        refinementOf:
+          type: string
+          nullable: true
+      required: [type, prompt]
+    RefineRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        guidance:
+          type: string
+      required: [guidance]
+    FeedbackRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        generationId:
+          type: string
+        matchesIntent:
+          type: boolean
+        note:
+          type: string
+          nullable: true
+      required: [generationId, matchesIntent]
+    PublishRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        generationId:
+          type: string
+        visibility:
+          type: string
+          enum: [public, unlisted]
+        altText:
+          type: string
+          nullable: true
+        captions:
+          type: string
+          nullable: true
+      required: [generationId, visibility]
+    Generation:
+      type: object
+      properties:
+        id:
+          type: string
+        promptId:
+          type: string
+          nullable: true
+        type:
+          type: string
+          enum: [image, video]
+        status:
+          type: string
+          enum: [queued, running, complete, failed]
+        model:
+          type: string
+        refinementOf:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        error:
+          type: string
+          nullable: true
+        asset:
+          $ref: '#/components/schemas/MediaAsset'
+          nullable: true
+    MediaAsset:
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+          format: uri
+        storagePath:
+          type: string
+        format:
+          type: string
+          description: File format, e.g., png or mp4
+        width:
+          type: integer
+          nullable: true
+        height:
+          type: integer
+          nullable: true
+        durationSec:
+          type: number
+          nullable: true
+        altText:
+          type: string
+          nullable: true
+        captions:
+          type: string
+          nullable: true
+        visibility:
+          type: string
+          enum: [private, unlisted, public]
+    CommunityPost:
+      type: object
+      properties:
+        id:
+          type: string
+        generationId:
+          type: string
+        authorId:
+          type: string
+        promptSummary:
+          type: string
+        thumbnailUrl:
+          type: string
+          format: uri
+        publishedAt:
+          type: string
+          format: date-time
+        visibility:
+          type: string
+          enum: [public]
+    VertexStreamChunk:
+      type: object
+      properties:
+        chunk:
+          type: string
+          description: Raw streamed data chunk (implementation-defined)

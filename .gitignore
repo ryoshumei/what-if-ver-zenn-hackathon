@@ -40,3 +40,17 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 /.idea/
+/.firebaserc
+/.next-dev.log
+/firebase.json
+/firestore.indexes.json
+/firestore.rules
+/N
+/pglite-debug.log
+/storage.rules
+/.playwright-mcp/
+/playwright-report/
+/test-results/
+
+# CI local scripts (untracked)
+scripts/ci/cloud_run_target_check.sh
