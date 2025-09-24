@@ -222,8 +222,8 @@ export default function PublishModal({
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                errors.title ? "border-red-300" : "border-gray-300"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent placeholder-gray-500 text-gray-900 ${
+                errors.title ? "border-red-400" : "border-gray-300 bg-white"
               }`}
               placeholder="Give your creation a catchy title"
               maxLength={100}
@@ -250,8 +250,8 @@ export default function PublishModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={4}
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none ${
-                errors.description ? "border-red-300" : "border-gray-300"
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent resize-none placeholder-gray-500 text-gray-900 ${
+                errors.description ? "border-red-400" : "border-gray-300 bg-white"
               }`}
               placeholder="Describe your creation and the 'what if' scenario that inspired it"
               maxLength={500}
@@ -282,8 +282,8 @@ export default function PublishModal({
                 id="altText"
                 value={altText}
                 onChange={(e) => setAltText(e.target.value)}
-                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                  errors.altText ? "border-red-300" : "border-gray-300"
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent placeholder-gray-500 text-gray-900 ${
+                  errors.altText ? "border-red-400" : "border-gray-300 bg-white"
                 }`}
                 placeholder="Describe what's in the image for screen readers"
                 maxLength={200}
@@ -314,7 +314,7 @@ export default function PublishModal({
                 value={captions}
                 onChange={(e) => setCaptions(e.target.value)}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent resize-none placeholder-gray-500 text-gray-900 border-gray-300 bg-white"
                 placeholder="Add captions or transcript for accessibility"
                 maxLength={1000}
                 disabled={isLoading}
@@ -354,7 +354,7 @@ export default function PublishModal({
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent placeholder-gray-500 text-gray-900 border-gray-300 bg-white"
                 placeholder="Add a tag"
                 maxLength={20}
                 disabled={isLoading || tags.length >= 10}

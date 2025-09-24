@@ -80,15 +80,15 @@ export default function PromptInput({
             onChange={(e) => handlePromptChange(e.target.value)}
             placeholder={placeholder}
             disabled={disabled}
-            className={`w-full p-4 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-              errors.length > 0 ? "border-red-300 bg-red-50" : "border-gray-300"
-            } ${disabled ? "bg-gray-50 cursor-not-allowed" : ""}`}
+            className={`w-full p-4 border rounded-lg resize-none focus:ring-2 focus:ring-blue-600 focus:border-transparent placeholder-gray-500 text-gray-900 ${
+              errors.length > 0 ? "border-red-400 bg-red-50" : "border-gray-300 bg-white"
+            } ${disabled ? "bg-gray-100 text-gray-500 cursor-not-allowed" : ""}`}
             rows={3}
             maxLength={maxChars}
           />
 
           {/* Character Count */}
-          <div className="absolute bottom-2 right-2 text-xs text-gray-500">
+          <div className="absolute bottom-2 right-2 text-xs text-gray-600">
             {charCount}/{maxChars}
           </div>
         </div>
@@ -127,7 +127,7 @@ export default function PromptInput({
 
         {/* Suggestions */}
         {prompt.length > 0 && prompt.length < 20 && (
-          <div className="text-center text-sm text-gray-600">
+          <div className="text-center text-sm text-gray-700">
             💡 Try adding more details about the scene, colors, or mood
           </div>
         )}

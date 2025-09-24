@@ -37,18 +37,18 @@ const ChatMessage = memo(function ChatMessage({
       <div
         className={`max-w-3xl rounded-lg px-4 py-3 ${
           message.role === "user"
-            ? "bg-blue-600 text-white"
-            : "bg-white border border-gray-200"
+            ? "bg-blue-700 text-white"
+            : "bg-white border border-gray-300"
         }`}
       >
         <div className="flex items-start space-x-3">
           <div className="flex-shrink-0">
             {message.role === "user" ? (
-              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-medium">
+              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-medium">
                 U
               </div>
             ) : (
-              <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+              <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
                 🤖
               </div>
             )}
@@ -56,16 +56,16 @@ const ChatMessage = memo(function ChatMessage({
           <div className="flex-1">
             <p
               className={
-                message.role === "user" ? "text-white" : "text-gray-800"
+                message.role === "user" ? "text-white" : "text-gray-900"
               }
             >
               {message.content}
               {message.isStreaming && (
-                <span className="inline-block w-1 h-4 ml-1 bg-blue-600 animate-pulse"></span>
+                <span className="inline-block w-1 h-4 ml-1 bg-blue-700 animate-pulse"></span>
               )}
             </p>
 
-            <div className="text-xs opacity-60 mt-2">
+            <div className="text-xs text-gray-600 mt-2">
               {message.timestamp.toLocaleTimeString()}
             </div>
           </div>

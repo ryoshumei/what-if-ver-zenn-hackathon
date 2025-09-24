@@ -217,7 +217,7 @@ const GenerationResult = memo(function GenerationResult({
               value={refinementPrompt}
               onChange={(e) => setRefinementPrompt(e.target.value)}
               placeholder="Describe how you'd like to modify this generation..."
-              className="w-full p-2 border border-gray-300 rounded text-sm resize-none"
+              className="w-full p-2 border rounded text-sm resize-none focus:ring-2 focus:ring-blue-600 focus:border-transparent placeholder-gray-500 text-gray-900 border-gray-300 bg-white"
               rows={2}
               maxLength={500}
             />

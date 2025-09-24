@@ -293,7 +293,7 @@ export default function CaptionsEditor({
                       value={captions}
                       onChange={(e) => setCaptions(e.target.value)}
                       placeholder="Add a general description or transcript of the video audio..."
-                      className="w-full h-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                      className="w-full h-32 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent resize-none placeholder-gray-500 text-gray-900 border-gray-300 bg-white"
                       maxLength={2000}
                     />
                     <div className="text-xs text-gray-500 mt-1">
@@ -342,7 +342,7 @@ export default function CaptionsEditor({
                           >
                             Start Time
                           </label>
-                          <input
+                        <input
                             id={`segment-start-${index}`}
                             type="number"
                             step="0.1"
@@ -354,7 +354,7 @@ export default function CaptionsEditor({
                                 Number(e.target.value),
                               )
                             }
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          className="w-full px-2 py-1 border rounded text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent text-gray-900 border-gray-300 bg-white"
                           />
                         </div>
                         <div>
@@ -364,7 +364,7 @@ export default function CaptionsEditor({
                           >
                             End Time
                           </label>
-                          <input
+                        <input
                             id={`segment-end-${index}`}
                             type="number"
                             step="0.1"
@@ -376,7 +376,7 @@ export default function CaptionsEditor({
                                 Number(e.target.value),
                               )
                             }
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          className="w-full px-2 py-1 border rounded text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent text-gray-900 border-gray-300 bg-white"
                           />
                         </div>
                       </div>
@@ -395,7 +395,7 @@ export default function CaptionsEditor({
                             updateSegment(index, "text", e.target.value)
                           }
                           placeholder="Enter caption text..."
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm resize-none"
+                          className="w-full px-2 py-1 border rounded text-sm resize-none focus:ring-2 focus:ring-blue-600 focus:border-transparent placeholder-gray-500 text-gray-900 border-gray-300 bg-white"
                           rows={2}
                         />
                       </div>

@@ -1,11 +1,11 @@
 import type { Generation } from "../models/Generation";
 import { validatePromptText } from "../models/IdeaPrompt";
+import { vertexAdapter } from "../adapters/vertex";
 
 export interface PlannerResult {
   success: boolean;
   enhancedPrompt: string;
   detectedLanguage: "en" | "zh-CN" | "ja" | "unknown";
-  suggestedType: "image" | "video";
   confidence: number;
   errors?: string[];
   suggestions?: string[];
@@ -21,7 +21,7 @@ export interface RefinementResult {
 export class IdeaPlanner {
   async planGeneration(
     userPrompt: string,
-    preferredType?: "image" | "video",
+    mediaType: "image" | "video",
   ): Promise<PlannerResult> {
     // Validate the input prompt
     const validation = validatePromptText(userPrompt);
@@ -30,7 +30,6 @@ export class IdeaPlanner {
         success: false,
         enhancedPrompt: userPrompt,
         detectedLanguage: "unknown",
-        suggestedType: "image",
         confidence: 0,
         errors: validation.errors,
       };
@@ -40,32 +39,21 @@ export class IdeaPlanner {
       // Detect language
       const detectedLanguage = this.detectLanguage(userPrompt);
 
-      // Enhance the prompt for better generation
-      const enhancedPrompt = this.enhancePrompt(userPrompt, detectedLanguage);
-
-      // Suggest the best media type
-      const suggestedType = preferredType || this.suggestMediaType(userPrompt);
-
-      // Calculate confidence based on prompt quality
-      const confidence = this.calculateConfidence(userPrompt, enhancedPrompt);
-
-      // Generate suggestions for improvement
-      const suggestions = this.generateSuggestions(userPrompt, suggestedType);
+      // Iterative enhancement with confidence evaluation
+      const result = await this.enhanceWithIterativeImprovement(userPrompt, mediaType);
 
       return {
         success: true,
-        enhancedPrompt,
+        enhancedPrompt: result.enhancedPrompt,
         detectedLanguage,
-        suggestedType,
-        confidence,
-        suggestions,
+        confidence: result.confidence,
+        suggestions: result.suggestions,
       };
     } catch (_error) {
       return {
         success: false,
         enhancedPrompt: userPrompt,
         detectedLanguage: "unknown",
-        suggestedType: "image",
         confidence: 0,
         errors: ["Failed to plan generation"],
       };
@@ -127,145 +115,193 @@ export class IdeaPlanner {
     return "unknown";
   }
 
-  private enhancePrompt(
-    prompt: string,
-    language: "en" | "zh-CN" | "ja" | "unknown",
-  ): string {
-    // Add visual enhancement cues based on language
-    const basePrompt = prompt.trim();
+  private async enhanceWithIterativeImprovement(
+    originalPrompt: string,
+    mediaType: "image" | "video",
+  ): Promise<{ enhancedPrompt: string; confidence: number; suggestions: string[] }> {
+    let currentPrompt = originalPrompt;
+    let attempts = 0;
+    const maxAttempts = 3;
+    const minimumConfidence = 0.7;
 
-    // Add style and quality enhancers
-    const enhancers = {
-      en: [
-        "highly detailed",
-        "photorealistic",
-        "professional lighting",
-        "sharp focus",
-        "vivid colors",
-      ],
-      "zh-CN": ["高度详细", "逼真", "专业照明", "清晰焦点", "鲜艳色彩"],
-      ja: [
-        "高度に詳細",
-        "フォトリアリスティック",
-        "プロ照明",
-        "鮮明な焦点",
-        "鮮やかな色彩",
-      ],
-      unknown: ["detailed", "clear", "well-lit"],
+    while (attempts < maxAttempts) {
+      attempts++;
+
+      // Enhance the current prompt
+      const enhancedPrompt = await this.enhancePromptWithLLM(currentPrompt, mediaType);
+
+      // Calculate confidence using LLM
+      const confidence = await this.calculateConfidenceWithLLM(enhancedPrompt, mediaType);
+
+      console.log(`Enhancement attempt ${attempts}: confidence = ${confidence}`);
+
+      // If confidence is satisfactory or max attempts reached, return result
+      if (confidence >= minimumConfidence || attempts >= maxAttempts) {
+        const suggestions = confidence < minimumConfidence
+          ? await this.generateSuggestionsWithLLM(enhancedPrompt, mediaType)
+          : [];
+
+        return {
+          enhancedPrompt,
+          confidence,
+          suggestions,
+        };
+      }
+
+      // Get suggestions for improvement and create a new prompt based on them
+      const suggestions = await this.generateSuggestionsWithLLM(enhancedPrompt, mediaType);
+      if (suggestions.length > 0) {
+        currentPrompt = await this.refinePromptWithSuggestions(enhancedPrompt, suggestions, mediaType);
+      } else {
+        // If no suggestions, use current enhanced prompt
+        currentPrompt = enhancedPrompt;
+      }
+    }
+
+    // Fallback - should not reach here due to maxAttempts check above
+    return {
+      enhancedPrompt: currentPrompt,
+      confidence: 0.5,
+      suggestions: [],
     };
-
-    // Only enhance if the prompt seems to need it
-    if (basePrompt.length < 50 && !basePrompt.includes("detailed")) {
-      const langEnhancers = enhancers[language] || enhancers.unknown;
-      const selectedEnhancer = langEnhancers[0]; // Use the first enhancer
-      return `${basePrompt}, ${selectedEnhancer}`;
-    }
-
-    return basePrompt;
   }
 
-  private suggestMediaType(prompt: string): "image" | "video" {
-    // Keywords that suggest video content
-    const videoKeywords = [
-      "movement",
-      "moving",
-      "animation",
-      "flowing",
-      "dancing",
-      "walking",
-      "running",
-      "flying",
-      "floating",
-      "spinning",
-      "rotating",
-      "transforming",
-      "evolving",
-      "growing",
-      "changing",
-      "sequence",
-      "process",
-      "action",
-      "motion",
-      "dynamic",
-      "time-lapse",
-      "slow-motion",
-      // Non-English equivalents
-      "移動",
-      "動く",
-      "アニメーション",
-      "流れる",
-      "踊る",
-      "运动",
-      "移动",
-      "动画",
-      "流动",
-      "跳舞",
-    ];
-
-    const lowerPrompt = prompt.toLowerCase();
-    const hasVideoKeywords = videoKeywords.some((keyword) =>
-      lowerPrompt.includes(keyword.toLowerCase()),
-    );
-
-    return hasVideoKeywords ? "video" : "image";
-  }
-
-  private calculateConfidence(original: string, _enhanced: string): number {
-    // Base confidence on prompt quality factors
-    let confidence = 0.5;
-
-    // Length factor (more descriptive = higher confidence)
-    if (original.length > 20) confidence += 0.2;
-    if (original.length > 50) confidence += 0.2;
-
-    // Specificity factor (specific objects/scenes = higher confidence)
-    const specificWords = [
-      "chair",
-      "robot",
-      "room",
-      "space",
-      "garden",
-      "kitchen",
-      "floating",
-      "modern",
-    ];
-    const specificity = specificWords.filter((word) =>
-      original.toLowerCase().includes(word),
-    ).length;
-    confidence += Math.min(specificity * 0.1, 0.3);
-
-    return Math.min(confidence, 1.0);
-  }
-
-  private generateSuggestions(
+  private async enhancePromptWithLLM(
     prompt: string,
-    suggestedType: "image" | "video",
-  ): string[] {
-    const suggestions: string[] = [];
+    mediaType: "image" | "video",
+  ): Promise<string> {
+    try {
+      const planningPrompt = `You are an AI prompt engineer. Help improve this user prompt for ${mediaType} generation:
 
-    if (prompt.length < 20) {
-      suggestions.push(
-        "Try adding more details about the scene, objects, or setting",
-      );
+User prompt: "${prompt}"
+
+Please enhance this prompt to be more specific, descriptive, and suitable for ${mediaType} generation.
+
+Focus on:
+- Visual details (colors, lighting, composition)
+- Style and quality enhancers appropriate for ${mediaType}
+- Clear subject and setting description
+- Maintaining the user's original intent
+- ${mediaType === "video" ? "Motion, timing, and dynamic elements" : "Composition, depth, and visual clarity"}
+
+Return only the improved prompt, nothing else.`;
+
+      const response = await vertexAdapter.chat({
+        prompt: planningPrompt,
+        model: process.env.VERTEX_PLAN_MODEL || "gemini-2.5-pro",
+      });
+
+      // Return the enhanced prompt, fallback to original if LLM fails
+      return response.text?.trim() || prompt;
+    } catch (error) {
+      console.warn("Failed to enhance prompt with LLM, using original:", error);
+      return prompt;
     }
+  }
 
-    if (!prompt.includes("color") && !prompt.includes("lighting")) {
-      suggestions.push("Consider describing colors, lighting, or mood");
+
+  private async calculateConfidenceWithLLM(
+    prompt: string,
+    mediaType: "image" | "video",
+  ): Promise<number> {
+    try {
+      const evaluationPrompt = `You are an AI prompt quality evaluator. Assess this ${mediaType} generation prompt and rate its quality.
+
+Prompt to evaluate: "${prompt}"
+
+Evaluate based on:
+- Clarity and specificity of the subject/scene
+- Visual detail level (colors, lighting, composition)
+- Technical quality descriptors
+- ${mediaType === "video" ? "Motion and temporal elements" : "Composition and artistic elements"}
+- Overall descriptiveness and generation potential
+
+Return ONLY a confidence score between 0.0 and 1.0 (e.g., 0.75), nothing else.`;
+
+      const response = await vertexAdapter.chat({
+        prompt: evaluationPrompt,
+        model: process.env.VERTEX_PLAN_MODEL || "gemini-2.5-pro",
+      });
+
+      const confidenceText = response.text?.trim();
+      const confidence = confidenceText ? parseFloat(confidenceText) : 0.5;
+
+      // Ensure confidence is within valid range
+      return Math.max(0.0, Math.min(1.0, isNaN(confidence) ? 0.5 : confidence));
+    } catch (error) {
+      console.warn("Failed to calculate confidence with LLM, using fallback:", error);
+      // Fallback to simple length-based confidence
+      return Math.min(0.3 + (prompt.length / 200), 1.0);
     }
+  }
 
-    if (suggestedType === "video" && !prompt.includes("movement")) {
-      suggestions.push(
-        "Describe the type of movement or action you want to see",
-      );
+  private async generateSuggestionsWithLLM(
+    prompt: string,
+    mediaType: "image" | "video",
+  ): Promise<string[]> {
+    try {
+      const suggestionPrompt = `You are an AI prompt improvement advisor. Analyze this ${mediaType} generation prompt and provide specific improvement suggestions.
+
+Prompt to analyze: "${prompt}"
+
+Provide 2-4 specific, actionable suggestions to improve this prompt for better ${mediaType} generation. Focus on:
+- Missing visual details that would enhance the result
+- Technical aspects that could be specified
+- ${mediaType === "video" ? "Motion, timing, or dynamic elements" : "Composition, lighting, or artistic elements"}
+- Style or quality enhancements
+
+Format: Return suggestions as a JSON array of strings, e.g., ["Add lighting details", "Specify camera angle"]
+Return ONLY the JSON array, nothing else.`;
+
+      const response = await vertexAdapter.chat({
+        prompt: suggestionPrompt,
+        model: process.env.VERTEX_PLAN_MODEL || "gemini-2.5-pro",
+      });
+
+      const suggestionsText = response.text?.trim();
+      if (suggestionsText) {
+        try {
+          const parsed = JSON.parse(suggestionsText);
+          return Array.isArray(parsed) ? parsed.filter(s => typeof s === 'string') : [];
+        } catch {
+          // Fallback: try to extract suggestions from text
+          const lines = suggestionsText.split('\n').filter(line => line.trim());
+          return lines.slice(0, 4); // Max 4 suggestions
+        }
+      }
+
+      return [];
+    } catch (error) {
+      console.warn("Failed to generate suggestions with LLM:", error);
+      return [];
     }
+  }
 
-    if (suggestedType === "image" && prompt.includes("moving")) {
-      suggestions.push(
-        "For static images, focus on the moment or pose rather than movement",
-      );
+  private async refinePromptWithSuggestions(
+    prompt: string,
+    suggestions: string[],
+    mediaType: "image" | "video",
+  ): Promise<string> {
+    try {
+      const refinementPrompt = `You are an AI prompt engineer. Improve this ${mediaType} generation prompt by incorporating the provided suggestions.
+
+Current prompt: "${prompt}"
+
+Suggestions to incorporate:
+${suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+
+Return an improved version of the prompt that naturally incorporates these suggestions while maintaining the original intent. Return ONLY the improved prompt, nothing else.`;
+
+      const response = await vertexAdapter.chat({
+        prompt: refinementPrompt,
+        model: process.env.VERTEX_PLAN_MODEL || "gemini-2.5-pro",
+      });
+
+      return response.text?.trim() || prompt;
+    } catch (error) {
+      console.warn("Failed to refine prompt with suggestions:", error);
+      return prompt;
     }
-
-    return suggestions;
   }
 
   private combinePromptWithGuidance(

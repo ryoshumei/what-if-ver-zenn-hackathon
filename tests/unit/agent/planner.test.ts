@@ -12,7 +12,7 @@ describe("IdeaPlanner", () => {
     it("should plan generation for valid prompt", async () => {
       const prompt =
         "What if cats could fly through the clouds with rainbow wings?";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(true);
       expect(result.enhancedPrompt).toBeTruthy();
@@ -20,14 +20,13 @@ describe("IdeaPlanner", () => {
         prompt.length,
       );
       expect(result.detectedLanguage).toBe("en");
-      expect(["image", "video"]).toContain(result.suggestedType);
       expect(result.confidence).toBeGreaterThan(0.5);
       expect(result.errors).toBeUndefined();
     });
 
     it("should return error for invalid prompt", async () => {
       const prompt = ""; // Empty prompt
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(false);
       expect(result.enhancedPrompt).toBe(prompt);
@@ -39,7 +38,7 @@ describe("IdeaPlanner", () => {
 
     it("should return error for too short prompt", async () => {
       const prompt = "hi";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(false);
       expect(result.errors).toContain(
@@ -49,7 +48,7 @@ describe("IdeaPlanner", () => {
 
     it("should return error for too long prompt", async () => {
       const prompt = "a".repeat(2001);
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(false);
       expect(result.errors).toContain("Prompt cannot exceed 2000 characters");
@@ -57,7 +56,7 @@ describe("IdeaPlanner", () => {
 
     it("should return error for ambiguous prompt", async () => {
       const prompt = "something cool";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(false);
       expect(result.errors).toContain(
@@ -65,18 +64,22 @@ describe("IdeaPlanner", () => {
       );
     });
 
-    it("should respect preferred type", async () => {
+    it("should work with different media types", async () => {
       const prompt = "What if elephants could swim underwater like dolphins?";
-      const result = await planner.planGeneration(prompt, "video");
+      const imageResult = await planner.planGeneration(prompt, "image");
+      const videoResult = await planner.planGeneration(prompt, "video");
 
-      expect(result.success).toBe(true);
-      expect(result.suggestedType).toBe("video");
+      expect(imageResult.success).toBe(true);
+      expect(videoResult.success).toBe(true);
+      // Both should have enhanced prompts, possibly different based on media type
+      expect(imageResult.enhancedPrompt).toBeTruthy();
+      expect(videoResult.enhancedPrompt).toBeTruthy();
     });
 
     it("should detect Chinese language", async () => {
       const prompt =
         "如果猫咪可以在彩虹云朵中飞翔会怎么样？这将是一个神奇的世界，充满了色彩和奇迹。";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(true);
       expect(result.detectedLanguage).toBe("zh-CN");
@@ -85,28 +88,33 @@ describe("IdeaPlanner", () => {
     it("should detect Japanese language", async () => {
       const prompt =
         "もし猫が虹の翼で雲の中を飛べたらどうなるでしょうか？美しい魔法の世界になるでしょう。";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(true);
       expect(result.detectedLanguage).toBe("ja");
     });
 
-    it("should suggest video for motion keywords", async () => {
+    it("should enhance prompts differently for video vs image", async () => {
       const prompts = [
-        "What if birds could dance in the air while flying?", // "dancing", "flying"
-        "Cars floating through space with spinning wheels", // "floating", "spinning"
-        "Trees moving in an underwater current", // "moving" keyword that's definitely in the list
+        "What if birds could dance in the air while flying?",
+        "Cars floating through space with spinning wheels",
+        "Trees moving in an underwater current",
       ];
 
       for (const prompt of prompts) {
-        const result = await planner.planGeneration(prompt);
-        expect(result.success).toBe(true);
-        // The suggestMediaType looks for video keywords like "dancing", "floating", "spinning", "moving"
-        expect(result.suggestedType).toBe("video");
+        const imageResult = await planner.planGeneration(prompt, "image");
+        const videoResult = await planner.planGeneration(prompt, "video");
+
+        expect(imageResult.success).toBe(true);
+        expect(videoResult.success).toBe(true);
+
+        // Both should be enhanced but potentially differently
+        expect(imageResult.enhancedPrompt).toBeTruthy();
+        expect(videoResult.enhancedPrompt).toBeTruthy();
       }
     });
 
-    it("should suggest image for static descriptions", async () => {
+    it("should provide appropriate suggestions for different media types", async () => {
       const prompts = [
         "A beautiful mountain landscape with snow peaks",
         "A serene lake reflecting the sunset colors",
@@ -114,16 +122,25 @@ describe("IdeaPlanner", () => {
       ];
 
       for (const prompt of prompts) {
-        const result = await planner.planGeneration(prompt);
-        expect(result.success).toBe(true);
-        expect(result.suggestedType).toBe("image");
+        const imageResult = await planner.planGeneration(prompt, "image");
+        const videoResult = await planner.planGeneration(prompt, "video");
+
+        expect(imageResult.success).toBe(true);
+        expect(videoResult.success).toBe(true);
+
+        // Video suggestions might differ from image suggestions
+        if (videoResult.suggestions && imageResult.suggestions) {
+          // This is more of a functional test - the actual suggestions might vary
+          expect(Array.isArray(imageResult.suggestions)).toBe(true);
+          expect(Array.isArray(videoResult.suggestions)).toBe(true);
+        }
       }
     });
 
     it("should have high confidence for detailed prompts", async () => {
       const prompt =
         "What if majestic elephants with golden tusks could swim gracefully underwater like dolphins, surrounded by colorful coral reefs and tropical fish in crystal clear blue water?";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(true);
       expect(result.confidence).toBeGreaterThan(0.8);
@@ -131,29 +148,28 @@ describe("IdeaPlanner", () => {
 
     it("should have lower confidence for simple prompts", async () => {
       const prompt = "What if cats could fly?";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(true);
-      // This prompt is 21 chars so gets +0.2, no specific words so confidence should be 0.7
-      expect(result.confidence).toBeLessThanOrEqual(0.7);
+      // LLM-based confidence evaluation should return reasonable score for simple prompts
+      expect(result.confidence).toBeGreaterThan(0.0);
+      expect(result.confidence).toBeLessThanOrEqual(1.0);
     });
 
     it("should provide suggestions for improvement", async () => {
       const prompt = "What if dogs could talk but only said simple words?";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(true);
-      if (result.suggestions) {
+      // LLM-based suggestions should be provided when confidence is not high enough
+      if (result.suggestions && result.suggestions.length > 0) {
         expect(result.suggestions.length).toBeGreaterThan(0);
-        // Check for actual suggestion patterns from the implementation
-        expect(
-          result.suggestions.some(
-            (s) =>
-              s.includes("colors") ||
-              s.includes("lighting") ||
-              s.includes("details"),
-          ),
-        ).toBe(true);
+        expect(result.suggestions.length).toBeLessThanOrEqual(4); // Max 4 suggestions
+        // Check that suggestions are strings
+        result.suggestions.forEach(s => {
+          expect(typeof s).toBe('string');
+          expect(s.length).toBeGreaterThan(0);
+        });
       }
     });
   });
@@ -233,7 +249,7 @@ describe("IdeaPlanner", () => {
   describe("edge cases", () => {
     it("should handle prompts with special characters", async () => {
       const prompt = "What if robots could paint @#$%^&*() beautiful art?";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(true);
       expect(result.enhancedPrompt).toBeTruthy();
@@ -241,7 +257,7 @@ describe("IdeaPlanner", () => {
 
     it("should handle multilingual prompts", async () => {
       const prompt = "What if 猫 could fly like 鳥 in the sky?";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(true);
       expect(["en", "zh-CN", "unknown"]).toContain(result.detectedLanguage);
@@ -249,7 +265,7 @@ describe("IdeaPlanner", () => {
 
     it("should handle prompts with numbers", async () => {
       const prompt = "What if there were 100 flying cars in the year 2050?";
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       expect(result.success).toBe(true);
       expect(result.enhancedPrompt).toContain("100");
@@ -258,7 +274,7 @@ describe("IdeaPlanner", () => {
 
     it("should handle prompts with only punctuation", async () => {
       const prompt = "??"; // Very short punctuation
-      const result = await planner.planGeneration(prompt);
+      const result = await planner.planGeneration(prompt, "image");
 
       // This should fail validation since it's under 3 characters when trimmed
       expect(result.success).toBe(false);

@@ -127,8 +127,8 @@ export default function AltTextEditor({
                     setError("");
                   }}
                   placeholder="Describe what you see in this image..."
-                  className={`w-full h-32 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none ${
-                    error ? "border-red-300" : "border-gray-300"
+                  className={`w-full h-32 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent resize-none placeholder-gray-500 text-gray-900 ${
+                    error ? "border-red-400" : "border-gray-300 bg-white"
                   }`}
                   maxLength={maxLength}
                   disabled={isLoading}
