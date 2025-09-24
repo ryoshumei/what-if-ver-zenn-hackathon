@@ -27,7 +27,7 @@ gcloud auth configure-docker "${REGION}-docker.pkg.dev" -q
 
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${TAG}"
 
-echo "Building image: ${IMAGE}"
+echo "Building image (linux/amd64): ${IMAGE}"
 # Prepare production env file for Next.js build inside Docker
 BUILD_ENV_FILE=.env.production
 grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_FILE" | \
@@ -38,10 +38,19 @@ grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_FILE" | \
 cleanup() { rm -f "$BUILD_ENV_FILE" || true; }
 trap cleanup EXIT
 
-docker build -t "$IMAGE" .
+if docker buildx version >/dev/null 2>&1; then
+  docker buildx build --platform linux/amd64 -t "$IMAGE" . --push
+  PUSHED=1
+else
+  echo "buildx not found; falling back to docker build (no cross-arch)"
+  docker build --platform linux/amd64 -t "$IMAGE" .
+  PUSHED=0
+fi
 
-echo "Pushing image: ${IMAGE}"
-docker push "$IMAGE"
+if [[ "$PUSHED" -eq 0 ]]; then
+  echo "Pushing image: ${IMAGE}"
+  docker push "$IMAGE"
+fi
 
 echo "Preparing env vars from ${ENV_FILE} (excluding secrets)"
 # Build set-env-vars from env file, excluding GOOGLE_APPLICATION_CREDENTIALS and ACCESS_TOKEN
