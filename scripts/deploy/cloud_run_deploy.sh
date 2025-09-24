@@ -59,9 +59,9 @@ ENV_KV=$(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_FILE" | sed 's/\r$//' \
   | grep -v '^ACCESS_TOKEN=' \
   | tr '\n' ',' | sed 's/,$//')
 
-SA_FLAG=()
+SA_FLAG=""
 if [[ -n "${CLOUD_RUN_SA_EMAIL:-}" ]]; then
-  SA_FLAG+=("--service-account" "$CLOUD_RUN_SA_EMAIL")
+  SA_FLAG="--service-account \"$CLOUD_RUN_SA_EMAIL\""
 fi
 
 echo "Deploying to Cloud Run: ${SERVICE} (${REGION})"
@@ -72,7 +72,7 @@ gcloud run deploy "$SERVICE" \
   --allow-unauthenticated \
   --port 3000 \
   --set-env-vars NODE_ENV=production${ENV_KV:+,$ENV_KV} \
-  "${SA_FLAG[@]}"
+  ${SA_FLAG}
 
 echo "Deployment complete."
 
