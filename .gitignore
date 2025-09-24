@@ -40,3 +40,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 /.idea/
+/.firebaserc
+/.next-dev.log
+/firebase.json
+/firestore.indexes.json
+/firestore.rules
+/N
+/pglite-debug.log
+/storage.rules
