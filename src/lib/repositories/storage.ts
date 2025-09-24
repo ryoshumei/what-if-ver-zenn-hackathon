@@ -317,7 +317,8 @@ export class StorageRepository {
 
       for (const file of files) {
         const [metadata] = await file.getMetadata();
-        const created = new Date(metadata.timeCreated);
+        const createdRaw = (metadata as any).timeCreated as string | undefined;
+        const created = createdRaw ? new Date(createdRaw) : new Date();
 
         if (created < cutoffDate) {
           await file.delete();
