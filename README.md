@@ -2,7 +2,14 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+First, set up environment variables (copy and edit):
+
+```bash
+cp .env.example .env.local
+# edit .env.local with your GCP project, Vertex models, Firebase config
+```
+
+Then run the development server:
 
 ```bash
 npm run dev
@@ -59,7 +66,11 @@ See `scripts/ci/vertex_ai_healthcheck.sh` and `scripts/ci/cloud_run_target_check
 
 ## Cloud Run Deployment (Minimal)
 
-Docker-based deploy scripts are provided:
+Docker-based deploy scripts are provided. The script will:
+- Build linux/amd64 image
+- Inject `.env.local` as `.env.production` at build time for Next.js
+- Push to Artifact Registry `${AR_REPO}` (create if needed)
+- Deploy to Cloud Run with the same env vars
 
 ```bash
 # Build & push & deploy (requires gcloud and docker login)
@@ -71,11 +82,26 @@ export IMAGE_TAG=$(git rev-parse --short HEAD)
 bash scripts/deploy/cloud_run_deploy.sh
 ```
 
+Service URL will be printed after deployment.
+
 ### IaC (Cloud Run service.yaml)
 Minimal service configuration for Cloud Run is available at `infra/cloud-run/service.yaml`.
 Replace `REGION`, `PROJECT`, `REPO`, `TAG` placeholders before applying via `gcloud run services replace`.
 
-## Vertex AI (Gemini) Quickstart
+## Vertex AI + Veo LRO (Overview)
+
+- Image generation uses Vertex Prediction `imagegeneration@006`.
+- Video generation uses Veo with Long-Running Operations (LRO):
+  1) Start via REST `predictLongRunning`
+  2) Poll via REST `fetchPredictOperation`
+  3) On completion, prefer `response.videos[].gcsUri`
+  4) App will copy to `PUBLIC_GCS_BUCKET` (if set) and `makePublic`, returning long-lived HTTPS
+  5) 兜底：若仍为 `gs://`，`GET /api/generations/[id]` 会签名 60 分钟可读的 HTTPS，前端可播
+
+环境变量关键项（见 `.env.example`）：
+- `GCS_OUTPUT_BUCKET`: Vertex 输出的 gs:// 位置
+- `PUBLIC_GCS_BUCKET`: 公开桶（名称，不加 gs://）用于发布长期可访问的 URL
+- `VERTEX_VIDEO_LRO_MODE=rest`: 使用稳定 REST LRO
 
 See `docs/vertex-ai-quickstart.md` and run the minimal example:
 
@@ -88,3 +114,11 @@ node docs/examples/vertex_gemini_min.js
 ### Streaming examples
 - cURL streaming (server output): `docs/examples/vertex_stream_curl.sh`
 - Next.js Edge API proxy (POST JSON: `{ "prompt": "..." }`): `POST /api/vertex/stream`
+
+## Troubleshooting
+
+- Container failed to start / exec format error: 镜像需 `linux/amd64`，脚本已启用 buildx。 
+- Cloud Run 未监听端口：Dockerfile 使用 shell-form `CMD`，确保 `${PORT}` 被展开。
+- Vertex UNAUTHENTICATED：使用 ADC（服务账号）并确保角色 `roles/aiplatform.user`。
+- GCS 权限：`GCS_OUTPUT_BUCKET` / `PUBLIC_GCS_BUCKET` 需要服务账号具备 `roles/storage.objectAdmin`。
+- 返回 gs:// 无法播放：已启用接口兜底签名；或确保 PUBLIC_GCS_BUCKET 生效。
