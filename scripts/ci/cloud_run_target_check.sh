@@ -4,7 +4,7 @@ set -euo pipefail
 # Comments: Validate Cloud Run target configuration. Fails if service not found or region mismatched.
 
 # Load env file if present (behavior aligned with deploy script)
-ENV_FILE="${ENV_FILE:-.env.local}"
+ENV_FILE="${ENV_FILE:-.env.example}"
 if [[ -f "$ENV_FILE" ]]; then
   # Comments: use POSIX-compatible auto-export to load .env style files
   # shellcheck disable=SC1090

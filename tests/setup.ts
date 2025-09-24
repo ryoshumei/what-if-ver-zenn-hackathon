@@ -1,5 +1,5 @@
 // Test environment setup
-process.env.NODE_ENV = 'test';
+(process.env as any).NODE_ENV = 'test';
 
 // Mock required environment variables
 process.env.GCP_PROJECT_ID = 'test-project';
@@ -26,10 +26,19 @@ vi.mock('../src/lib/adapters/vertex', () => ({
     chat: vi.fn().mockImplementation(({ prompt }: { prompt: string }) => {
       // Handle different types of LLM calls
       if (prompt.includes('confidence score between 0.0 and 1.0')) {
-        // Confidence evaluation - return varying scores based on prompt length
+        // Confidence evaluation - return varying scores based on prompt length and detail
         const promptMatch = prompt.match(/Prompt to evaluate: "(.*?)"/);
         const evaluatedPrompt = promptMatch ? promptMatch[1] : '';
-        const confidence = evaluatedPrompt.length > 50 ? '0.8' : '0.6';
+        let confidence = '0.5'; // Default
+
+        if (evaluatedPrompt.length > 100) {
+          confidence = '0.9'; // Very detailed prompts get high confidence
+        } else if (evaluatedPrompt.length > 50) {
+          confidence = '0.8'; // Moderately detailed prompts
+        } else if (evaluatedPrompt.length > 20) {
+          confidence = '0.6'; // Simple prompts
+        }
+
         return Promise.resolve({ text: confidence });
       }
 
