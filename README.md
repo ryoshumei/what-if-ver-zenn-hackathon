@@ -1,3 +1,9 @@
+## 📝 Zenn Article
+
+Read the full article about this project: [https://zenn.dev/daydreamer/articles/2798ac84e28df5](https://zenn.dev/daydreamer/articles/2798ac84e28df5)
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
