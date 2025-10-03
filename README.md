@@ -96,12 +96,12 @@ Replace `REGION`, `PROJECT`, `REPO`, `TAG` placeholders before applying via `gcl
   2) Poll via REST `fetchPredictOperation`
   3) On completion, prefer `response.videos[].gcsUri`
   4) App will copy to `PUBLIC_GCS_BUCKET` (if set) and `makePublic`, returning long-lived HTTPS
-  5) 兜底：若仍为 `gs://`，`GET /api/generations/[id]` 会签名 60 分钟可读的 HTTPS，前端可播
+  5) Fallback: if the URL is still `gs://`, `GET /api/generations/[id]` returns a signed HTTPS URL valid for 60 minutes so the frontend can play it
 
-环境变量关键项（见 `.env.example`）：
-- `GCS_OUTPUT_BUCKET`: Vertex 输出的 gs:// 位置
-- `PUBLIC_GCS_BUCKET`: 公开桶（名称，不加 gs://）用于发布长期可访问的 URL
-- `VERTEX_VIDEO_LRO_MODE=rest`: 使用稳定 REST LRO
+Key environment variables (see `.env.example`):
+- `GCS_OUTPUT_BUCKET`: gs:// location where Vertex writes outputs
+- `PUBLIC_GCS_BUCKET`: public bucket name (without gs://) used to publish long-lived URLs
+- `VERTEX_VIDEO_LRO_MODE=rest`: use stable REST LRO mode
 
 See `docs/vertex-ai-quickstart.md` and run the minimal example:
 
@@ -117,8 +117,8 @@ node docs/examples/vertex_gemini_min.js
 
 ## Troubleshooting
 
-- Container failed to start / exec format error: 镜像需 `linux/amd64`，脚本已启用 buildx。 
-- Cloud Run 未监听端口：Dockerfile 使用 shell-form `CMD`，确保 `${PORT}` 被展开。
-- Vertex UNAUTHENTICATED：使用 ADC（服务账号）并确保角色 `roles/aiplatform.user`。
-- GCS 权限：`GCS_OUTPUT_BUCKET` / `PUBLIC_GCS_BUCKET` 需要服务账号具备 `roles/storage.objectAdmin`。
-- 返回 gs:// 无法播放：已启用接口兜底签名；或确保 PUBLIC_GCS_BUCKET 生效。
+- Container failed to start / exec format error: the image must be `linux/amd64`; the script enables Buildx for cross-arch builds.
+- Cloud Run not listening on port: Dockerfile uses shell-form `CMD`; ensure `${PORT}` is expanded by the shell.
+- Vertex UNAUTHENTICATED: use ADC (service account) and grant `roles/aiplatform.user`.
+- GCS permissions: the service account for `GCS_OUTPUT_BUCKET` / `PUBLIC_GCS_BUCKET` needs `roles/storage.objectAdmin`.
+- Returned `gs://` not playable: the API provides a fallback to return a signed HTTPS URL; or configure `PUBLIC_GCS_BUCKET` so assets are published publicly.
