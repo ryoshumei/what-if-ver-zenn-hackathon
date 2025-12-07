@@ -1,0 +1,26 @@
+# Use .dockerignore as the base
+#!include:.dockerignore
+
+# Explicitly list what to ignore
+node_modules
+.next/cache
+.git
+.github
+.vscode
+.idea
+.DS_Store
+*.log
+coverage
+dist
+.venv
+
+# Exclude sensitive env files but allow .env.production
+.env
+.env.local
+.env.development
+.env.test
+
+# Test files
+playwright-report/
+test-results/
+.playwright-mcp/
