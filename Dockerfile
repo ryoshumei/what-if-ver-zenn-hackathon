@@ -2,7 +2,7 @@
 
 FROM node:20-slim AS deps
 WORKDIR /app
-COPY package.json package-lock.json* .
+COPY package.json package-lock.json* ./
 RUN npm ci --no-audit --no-fund
 
 FROM node:20-slim AS builder
